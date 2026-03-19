@@ -221,7 +221,7 @@ MERN-Full-Stack-PennyWise-App/
 
 ## Getting Started
 
-### 1. 1. Download/Clone the Repository
+### 1. Download/Clone the Repository
 
 ### 2. Set Up the Server
 

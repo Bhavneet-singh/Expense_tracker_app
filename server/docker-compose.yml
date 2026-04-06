@@ -23,21 +23,21 @@ services:
       timeout: 5s
       retries: 5
 
-  pgadmin:
-    image: dpage/pgadmin4:7
-    container_name: expense-tracker-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "8080:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    networks:
-      - expense-tracker-network
-    restart: unless-stopped
-    depends_on:
-      - postgres
+  # pgadmin:
+  #   image: dpage/pgadmin4:7
+  #   container_name: expense-tracker-pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@example.com
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   networks:
+  #     - expense-tracker-network
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - postgres
 
   server:
     build:
@@ -66,42 +66,42 @@ services:
       timeout: 10s
       retries: 3
 
-  influxdb:
-    image: influxdb:1.8
-    container_name: expense-tracker-influxdb
-    environment:
-      INFLUXDB_DB: k6
-      INFLUXDB_HTTP_AUTH_ENABLED: "false"
-    ports:
-      - "8086:8086"
-    volumes:
-      - influxdb_data:/var/lib/influxdb
-    networks:
-      - expense-tracker-network
-    restart: unless-stopped
+  # influxdb:
+  #   image: influxdb:1.8
+  #   container_name: expense-tracker-influxdb
+  #   environment:
+  #     INFLUXDB_DB: k6
+  #     INFLUXDB_HTTP_AUTH_ENABLED: "false"
+  #   ports:
+  #     - "8086:8086"
+  #   volumes:
+  #     - influxdb_data:/var/lib/influxdb
+  #   networks:
+  #     - expense-tracker-network
+  #   restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:11.1.0
-    container_name: expense-tracker-grafana
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    ports:
-      - "3001:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    networks:
-      - expense-tracker-network
-    depends_on:
-      - influxdb
-    restart: unless-stopped
+  # grafana:
+  #   image: grafana/grafana:11.1.0
+  #   container_name: expense-tracker-grafana
+  #   environment:
+  #     GF_SECURITY_ADMIN_USER: admin
+  #     GF_SECURITY_ADMIN_PASSWORD: admin
+  #   ports:
+  #     - "3001:3000"
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/provisioning:/etc/grafana/provisioning
+  #   networks:
+  #     - expense-tracker-network
+  #   depends_on:
+  #     - influxdb
+  #   restart: unless-stopped
 
 volumes:
   postgres_data:
-  pgadmin_data:
-  influxdb_data:
-  grafana_data:
+  # pgadmin_data:
+  # influxdb_data:
+  # grafana_data:
 
 networks:
   expense-tracker-network:

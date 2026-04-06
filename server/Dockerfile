@@ -2,25 +2,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy dependencies
 COPY package*.json ./
-
-# Install ALL deps (needed for build)
 RUN npm install
 
-# Copy code
 COPY . .
 
-# Build TypeScript → dist
-RUN npm run build
-
-# Generate Prisma client
+# 🔥 FIX: generate prisma FIRST
 RUN npx prisma generate
 
-# Remove dev dependencies (optimize)
-RUN npm prune --production
+# THEN build
+RUN npm run build
 
-# Clean cache
+# cleanup
+RUN npm prune --production
 RUN npm cache clean --force
 
 EXPOSE 8000

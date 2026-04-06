@@ -1,3 +1,257 @@
+# PennyWise Expense Tracker
+
+Full-stack expense tracking app with a React frontend and an Express API backend.  
+The backend uses PostgreSQL with Prisma and JWT-based authentication.
+
+## Tech Stack
+
+### Frontend (`client/`)
+
+- React 19 + TypeScript
+- Vite
+- TanStack Router
+- Zustand
+- Axios
+- Recharts
+- Tailwind CSS v4
+
+### Backend (`server/`)
+
+- Node.js + Express 5 + TypeScript
+- PostgreSQL
+- Prisma ORM (`@prisma/client`)
+- `pg` for SQL queries (analytics)
+- JWT (`jsonwebtoken`)
+- Password hashing (`bcryptjs`)
+- Docker + Docker Compose
+
+## Core Features
+
+- User signup and login with JWT auth
+- Protected routes on frontend and backend
+- Expense CRUD (create, list, get by id, update, delete)
+- Dashboard and analytics endpoints
+- Profile management
+- Avatar upload/delete
+- Export user + expenses data
+- Account deletion
+
+## Project Structure
+
+```text
+Expense_Tracker_App/
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   ├── store/
+│   │   ├── types/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   └── package.json
+├── server/
+│   ├── prisma/
+│   │   └── schema.prisma
+│   ├── src/
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   ├── middleware/
+│   │   ├── models/
+│   │   ├── routes/
+│   │   ├── utils/
+│   │   └── index.ts
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   └── package.json
+└── README.md
+```
+
+## Prerequisites
+
+- Node.js 18+
+- npm
+- Docker Desktop (recommended for local PostgreSQL setup)
+
+## Environment Variables
+
+### Server (`server/.env`)
+
+```env
+PORT=8000
+NODE_ENV=development
+JWT_SECRET=replace-with-strong-secret
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/expense-tracker
+```
+
+### Client (`client/.env`)
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+```
+
+## Local Development (Without Docker for API)
+
+1) Start PostgreSQL locally (or via Docker only for DB).
+
+2) Install backend dependencies:
+
+```bash
+cd server
+npm install
+```
+
+3) Generate Prisma client:
+
+```bash
+npm run prisma:generate
+```
+
+4) Start backend:
+
+```bash
+npm run dev
+```
+
+Backend runs at `http://localhost:8000`.
+
+5) Install and run frontend:
+
+```bash
+cd ../client
+npm install
+npm run dev
+```
+
+Frontend runs at `http://localhost:5173` (Vite default).
+
+## Run With Docker Compose (Backend + DB + Tools)
+
+From `server/`:
+
+```bash
+cd server
+docker compose up -d --build
+```
+
+Default exposed services:
+
+- API: `http://localhost:8000`
+- Postgres: `localhost:5432`
+- pgAdmin: `http://localhost:8080`
+- InfluxDB: `http://localhost:8086`
+- Grafana: `http://localhost:3001`
+
+To stop:
+
+```bash
+docker compose down
+```
+
+To stop and remove volumes:
+
+```bash
+docker compose down -v
+```
+
+## API Endpoints
+
+Base URL: `http://localhost:8000/api`
+
+### Auth (Public)
+
+- `POST /auth/signup`
+- `POST /auth/login`
+
+### Expenses (Protected)
+
+- `GET /expenses`
+- `GET /expenses/:id`
+- `POST /expenses`
+- `POST /expenses/:id` (update route currently uses POST)
+- `DELETE /expenses/:id`
+
+### Profile (Protected)
+
+- `GET /profile`
+- `PUT /profile`
+- `POST /profile/avatar`
+- `GET /profile/avatar`
+- `DELETE /profile/avatar`
+- `GET /profile/export`
+- `DELETE /profile/account`
+
+### Analytics (Protected)
+
+- `GET /analytics/dashboard`
+- `GET /analytics/category`
+- `GET /analytics/monthly`
+- `GET /analytics/trends`
+- `GET /analytics/period`
+- `GET /analytics/current-month`
+- `GET /analytics/yearly-categories`
+- `GET /analytics/all-years`
+
+## Auth Header Format
+
+Protected routes require:
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+## Database Model (Prisma)
+
+### `User`
+
+- `id` (Int, PK, autoincrement)
+- `name` (String)
+- `email` (String, unique)
+- `password` (String, hashed)
+- `createdAt`, `updatedAt`
+
+### `Expense`
+
+- `id` (Int, PK, autoincrement)
+- `userId` (FK -> User.id)
+- `amount` (Decimal)
+- `category` (String)
+- `description` (String)
+- `date`
+- `createdAt`, `updatedAt`
+
+Schema source: `server/prisma/schema.prisma`
+
+## Scripts
+
+### Server
+
+- `npm run dev` - run API in dev mode (nodemon)
+- `npm run start` - run API with tsx
+- `npm run build` - compile TypeScript
+- `npm run prisma:generate` - generate Prisma client
+- `npm test` - run tests
+- `npm run test:coverage` - test coverage
+
+### Client
+
+- `npm run dev` - start Vite dev server
+- `npm run build` - production build
+- `npm run preview` - preview production build
+
+## Deployment Notes (EC2)
+
+- Use Docker Compose on EC2 for backend services.
+- Keep `JWT_SECRET` strong and private.
+- Prefer managed PostgreSQL (AWS RDS) for production.
+- Put Nginx in front of API/frontend and enable HTTPS with Certbot.
+
+## Known Notes
+
+- Root app has moved from MongoDB/Mongoose to PostgreSQL/Prisma.
+- Some legacy code paths/docs may still reference Mongo naming.
+
 # 💰 PennyWise — MERN Full Stack Expense Tracker
 
 A secure, full-stack personal finance application built with MongoDB, Express, React, and Node.js. PennyWise allows users to track expenses, visualize spending patterns through interactive charts, and manage their financial data — all behind a secure JWT-authenticated API.

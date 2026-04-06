@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {
-    "postinstall": "echo skipping prisma generate",
-    "dev": "nodemon",
-    "build": "tsc -p tsconfig.json",
-    "start": "node ./src/index.ts",
-    "prisma:generate": "prisma generate",
-    "test": "jest --runInBand",
-    "test:coverage": "jest --runInBand --coverage"
-  },
+    "scripts": {
+      "postinstall": "echo skipping prisma generate",
+      "dev": "nodemon --exec tsx src/index.ts",
+      "build": "tsc -p tsconfig.json",
+      "start": "node dist/index.js",
+      "prisma:generate": "prisma generate",
+      "test": "jest --runInBand",
+      "test:coverage": "jest --runInBand --coverage"
+    }, 
   "keywords": [],
   "author": "",
   "license": "ISC",

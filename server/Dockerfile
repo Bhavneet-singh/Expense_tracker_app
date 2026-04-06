@@ -2,21 +2,27 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# 1. Copy only dependency files first (better caching)
+# Copy dependencies
 COPY package*.json ./
 
-# 2. Install only production dependencies
-RUN npm ci --only=production
+# Install ALL deps (needed for build)
+RUN npm install
 
-# 3. Copy rest of the app
+# Copy code
 COPY . .
 
-# 4. Generate Prisma client (only what's needed)
+# Build TypeScript → dist
+RUN npm run build
+
+# Generate Prisma client
 RUN npx prisma generate
 
-# 5. Remove unnecessary cache
+# Remove dev dependencies (optimize)
+RUN npm prune --production
+
+# Clean cache
 RUN npm cache clean --force
 
 EXPOSE 8000
 
-CMD ["node", "server.js"]
+CMD ["node", "dist/index.js"]

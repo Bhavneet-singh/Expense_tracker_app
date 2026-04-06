@@ -7,7 +7,7 @@
     "postinstall": "echo skipping prisma generate",
     "dev": "nodemon",
     "build": "tsc -p tsconfig.json",
-    "start": "tsx ./src/index.ts",
+    "start": "node ./src/index.ts",
     "prisma:generate": "prisma generate",
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage"

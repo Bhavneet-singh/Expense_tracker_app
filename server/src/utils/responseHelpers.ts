@@ -1,16 +1,18 @@
 import { NextFunction, Request, Response } from "express";
-import { ApiResponse } from "../types";
+import { ApiResponse, PaginationMeta } from "../types";
 
 export const sendSuccess = <T>(
   res: Response,
   data: T,
   message: string = "success",
-  statusCode: number = 200
+  statusCode: number = 200,
+  meta?: PaginationMeta,
 ) => {
   const response: ApiResponse<T> = {
     success: true,
     data,
     message,
+    ...(meta ? { meta } : {}),
   };
 
   res.status(statusCode).json(response);

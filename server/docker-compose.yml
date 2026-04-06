@@ -1,0 +1,108 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: expense-tracker-postgres
+    environment:
+      POSTGRES_DB: expense-tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
+    networks:
+      - expense-tracker-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d expense-tracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:7
+    container_name: expense-tracker-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - expense-tracker-network
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: expense-tracker-app
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/expense-tracker
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 24h
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - expense-tracker-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  influxdb:
+    image: influxdb:1.8
+    container_name: expense-tracker-influxdb
+    environment:
+      INFLUXDB_DB: k6
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+    networks:
+      - expense-tracker-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: expense-tracker-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - expense-tracker-network
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  influxdb_data:
+  grafana_data:
+
+networks:
+  expense-tracker-network:
+    driver: bridge

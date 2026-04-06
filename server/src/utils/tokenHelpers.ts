@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { logger } from "./logger";
 
 export const generateToken = (userId: string): string => {
   const secret = process.env.JWT_SECRET;
@@ -9,7 +10,8 @@ export const generateToken = (userId: string): string => {
 
   const payload = { userId };
 
-  const token = jwt.sign(payload, secret, { expiresIn: "7d" });
+  const token = jwt.sign(payload, secret, { expiresIn: "2d" });
+  logger.info("JWT token created", { userId });
 
   return token;
 };

@@ -6,7 +6,6 @@ import {
 } from "@/types/auth.types";
 import api from "./api";
 import { ApiResponse, User } from "@/types";
-import { Avatar } from "@/types/auth.types";
 
 export const signup = async (data: SignupRequest) => {
   const response = await api.post<ApiResponse<AuthResponse>>(
@@ -38,29 +37,6 @@ export const updateProfile = async (data: {
   password?: string;
 }) => {
   const response = await api.put<ApiResponse<User>>("/profile", data);
-
-  return response.data;
-};
-
-export const uploadAvatar = async (file: File) => {
-  const formData = new FormData();
-  formData.append("avatar", file);
-
-  const response = await api.post<ApiResponse<Avatar>>(
-    "/profile/avatar",
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    },
-  );
-
-  return response.data;
-};
-
-export const deleteAvatar = async () => {
-  const response = await api.delete<ApiResponse<null>>("/profile/avatar");
 
   return response.data;
 };

@@ -83,9 +83,7 @@ export default function Navigation() {
             </ul>
 
             <div className="flex items-center gap-4 self-end">
-              {user && (
-                <Avatar userName={user.name} avatarFileName={user.avatar} />
-              )}
+              {user && <Avatar userName={user.name} />}
 
               <span className="text-md text-white capitalize font-mono font-bold">
                 {user?.name}

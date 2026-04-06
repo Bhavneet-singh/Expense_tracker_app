@@ -2,28 +2,9 @@ import { NextFunction, Request, Response } from "express";
 import { AuthResponse } from "../types";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
 import { AppError } from "../middleware/errorHandler";
-import User from "../models/User";
+import { createUser, findUserByEmail } from "../models/User";
 import bcrypt from "bcryptjs";
 import { generateToken } from "../utils/tokenHelpers";
-
-// export let fakeUsers: User[] = [
-//   {
-//     id: "user123",
-//     name: "John Doe",
-//     email: "john@example.com",
-//     password: "passworD#123",
-//     createdAt: new Date("2025-12-01"),
-//     updatedAt: new Date("2026-01-01"),
-//   },
-//   {
-//     id: "user456",
-//     name: "Jane Smith",
-//     email: "jane@example.com",
-//     password: "passwoRD456&",
-//     createdAt: new Date("2025-12-01"),
-//     updatedAt: new Date("2026-01-05"),
-//   },
-// ];
 
 export const signup = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
@@ -57,37 +38,32 @@ export const signup = asyncHandler(
       if (!passwordRegex.test(password)) {
         throw new AppError(
           "Password must contain uppercase, lowercase, number, and special character (@$!%*?&)",
-          400
+          400,
         );
       }
     }
 
-    const existingUser = await User.findOne({ email: email });
+    const existingUser = await findUserByEmail(email);
 
     if (existingUser) {
       throw new AppError("Email already registered", 400);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = new User({
+    const savedUser = await createUser({
       name,
       email,
       password: hashedPassword,
     });
-
-    const savedUser = await newUser.save();
-
-    const userObject = savedUser.toObject();
-
-    const { password: _, ...userWithoutPassword } = userObject;
+    
+    const { password: _, ...userWithoutPassword } = savedUser;
 
     const authResponse: AuthResponse = {
-      user: { ...userWithoutPassword, _id: savedUser._id.toString() },
+      user: userWithoutPassword,
     };
 
     sendSuccess(res, authResponse, "Account created successfully!", 201);
-  }
+  },
 );
 
 export const login = asyncHandler(
@@ -98,7 +74,7 @@ export const login = asyncHandler(
       throw new AppError("Please provide email and password", 400);
     }
 
-    const user = await User.findOne({ email: email });
+    const user = await findUserByEmail(email);
 
     if (!user) {
       throw new AppError("Invalid email or password", 401);
@@ -110,17 +86,14 @@ export const login = asyncHandler(
       throw new AppError("Invalid email or password", 401);
     }
 
-    const userObject = user.toObject();
-
-    const { password: _, ...userWithoutPassword } = userObject;
-
-    const token = generateToken(user._id.toString());
+    const { password: _, ...userWithoutPassword } = user;
+    const token = generateToken(user._id);
 
     const authResponse: AuthResponse = {
-      user: { ...userWithoutPassword, _id: user._id.toString() },
+      user: userWithoutPassword,
       token,
     };
 
     sendSuccess(res, authResponse, "Login successful");
-  }
+  },
 );

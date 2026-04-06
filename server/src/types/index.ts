@@ -1,5 +1,3 @@
-import mongoose, { Document } from "mongoose";
-
 export enum ExpenseCategory {
   FOOD = "food",
   TRANSPORT = "transport",
@@ -12,10 +10,10 @@ export enum ExpenseCategory {
 }
 
 export interface Expense {
-  id: string;
+  _id: string;
   userId: string;
   amount: number;
-  category: ExpenseCategory;
+  category: ExpenseCategory | string;
   description: string;
   date: Date;
   createdAt: Date;
@@ -27,25 +25,27 @@ export interface User {
   name: string;
   email: string;
   password: string;
-  avatar?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface IUser extends Document {
-  name: string;
-  email: string;
-  password: string;
-  avatar?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export interface IUser extends User {}
+
+export interface IExpense extends Expense {}
 
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   message?: string;
   error?: string;
+  meta?: PaginationMeta;
+}
+
+export interface PaginationMeta {
+  limit: number;
+  offset: number;
+  total: number;
+  hasMore: boolean;
 }
 
 export interface AuthResponse {
@@ -75,14 +75,4 @@ export interface DashboardStats {
   currentMonthTotal: number;
   lastMonthTotal: number;
   monthlyChange: number;
-}
-
-export interface IExpense extends Document {
-  userId: mongoose.Types.ObjectId;
-  amount: number;
-  category: string;
-  description: string;
-  date: Date;
-  createdAt: Date;
-  updatedAt: Date;
 }

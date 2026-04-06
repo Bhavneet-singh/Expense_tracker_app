@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from "express";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
 import { AppError } from "../middleware/errorHandler";
-import { DashboardStats, ExpenseCategory, MonthlyTotals } from "../types";
-import Expense from "../models/Expense";
-import User from "../models/User";
+import { DashboardStats, Expense, MonthlyTotals } from "../types";
+import { findUserById } from "../models/User";
+import { query } from "../config/db";
 
 const getMonthString = (date: Date): string => {
   const year = date.getFullYear();
@@ -11,29 +11,59 @@ const getMonthString = (date: Date): string => {
   return `${month}-${year}`;
 };
 
-const getCurrentMonth = (): string => {
-  return getMonthString(new Date());
+type ExpenseRow = {
+  id: number;
+  user_id: number;
+  amount: string | number;
+  category: string;
+  description: string;
+  date: Date;
+  created_at: Date;
+  updated_at: Date;
 };
 
-const getLastMonth = (): string => {
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-  return getMonthString(date);
+const mapExpense = (row: ExpenseRow): Expense => ({
+  _id: String(row.id),
+  userId: String(row.user_id),
+  amount: Number(row.amount),
+  category: row.category,
+  description: row.description,
+  date: new Date(row.date),
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
+
+const ensureUser = async (userId: string) => {
+  const user = await findUserById(userId);
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
 };
 
 export const getExpensesByCategories = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
+    await ensureUser(req.userId);
 
-    const user = await User.findOne({ _id: userId });
+    const result = await query<{
+      category: string;
+      total: string | number;
+      count: string | number;
+      percentage: string | number;
+    }>(
+      `SELECT
+         category,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count,
+         ROUND((SUM(amount) / NULLIF(SUM(SUM(amount)) OVER (), 0) * 100)::numeric, 1) AS percentage
+       FROM expenses
+       WHERE user_id = $1
+       GROUP BY category
+       ORDER BY SUM(amount) DESC`,
+      [Number(req.userId)],
+    );
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    const userExpenses = await Expense.find({ userId });
-
-    if (userExpenses.length === 0) {
+    if (result.rows.length === 0) {
       sendSuccess(
         res,
         [],
@@ -42,51 +72,60 @@ export const getExpensesByCategories = asyncHandler(
       return;
     }
 
-    const categoryTotals = userExpenses.reduce(
-      (acc, expense) => {
-        if (!acc[expense.category]) {
-          acc[expense.category] = { total: 0, count: 0 };
-        }
+    const data = result.rows.map((row) => ({
+      category: row.category,
+      total: Number(row.total),
+      count: Number(row.count),
+      percentage: Number(row.percentage),
+    }));
 
-        acc[expense.category].total += expense.amount;
-        acc[expense.category].count += 1;
-        return acc;
-      },
-      {} as Record<string, { total: number; count: number }>,
-    );
-
-    const grandTotal = Object.values(categoryTotals).reduce(
-      (sum, cat) => sum + cat.total,
-      0,
-    );
-
-    const categoryArray = Object.entries(categoryTotals).map(
-      ([category, cat]) => ({
-        category,
-        ...cat,
-        percentage: Math.round((cat.total / grandTotal) * 1000) / 10,
-        total: Math.round(cat.total * 100) / 100,
-      }),
-    );
-
-    categoryArray.sort((a, b) => b.total - a.total);
-    sendSuccess(res, categoryArray, "Category breakdown retrieved!");
+    sendSuccess(res, data, "Category breakdown retrieved!");
   },
 );
 
 export const getDashboardStats = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
+    await ensureUser(req.userId);
 
-    const user = await User.findOne({ _id: userId });
+    const statsResult = await query<{
+      total_expenses: string | number;
+      expense_count: string | number;
+      rounded_average_expense_amount: string | number;
+      current_month_total: string | number;
+      last_month_total: string | number;
+    }>(
+      `SELECT
+         COALESCE(ROUND(SUM(amount)::numeric, 2), 0) AS total_expenses,
+         COUNT(*)::int AS expense_count,
+         COALESCE(ROUND(AVG(amount)::numeric, 1), 0) AS rounded_average_expense_amount,
+         COALESCE(
+           ROUND(
+             SUM(CASE
+               WHEN DATE_TRUNC('month', date) = DATE_TRUNC('month', CURRENT_DATE)
+               THEN amount ELSE 0
+             END)::numeric,
+             2
+           ),
+           0
+         ) AS current_month_total,
+         COALESCE(
+           ROUND(
+             SUM(CASE
+               WHEN DATE_TRUNC('month', date) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+               THEN amount ELSE 0
+             END)::numeric,
+             2
+           ),
+           0
+         ) AS last_month_total
+       FROM expenses
+       WHERE user_id = $1`,
+      [Number(req.userId)],
+    );
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    const summary = statsResult.rows[0];
 
-    const userExpenses = await Expense.find({ userId });
-
-    if (userExpenses.length === 0) {
+    if (!summary || Number(summary.expense_count) === 0) {
       sendSuccess(
         res,
         [],
@@ -95,64 +134,47 @@ export const getDashboardStats = asyncHandler(
       return;
     }
 
-    const totalExpenses = userExpenses.reduce(
-      (sum, exp) => sum + exp.amount,
-      0,
+    const extremes = await query<ExpenseRow>(
+      `(
+         SELECT id, user_id, amount, category, description, date, created_at, updated_at
+         FROM expenses
+         WHERE user_id = $1
+         ORDER BY amount DESC, date DESC
+         LIMIT 1
+       )
+       UNION ALL
+       (
+         SELECT id, user_id, amount, category, description, date, created_at, updated_at
+         FROM expenses
+         WHERE user_id = $1
+         ORDER BY amount ASC, date DESC
+         LIMIT 1
+       )`,
+      [Number(req.userId)],
     );
 
-    const averageExpense = totalExpenses / userExpenses.length;
-    const roundedAverageExpenseAmount = Math.round(averageExpense * 10) / 10;
-
-    const amounts = userExpenses.map((exp) => exp.amount);
-    const maxAmount = Math.max(...amounts);
-    const minAmount = Math.min(...amounts);
-
-    const highestExpense = userExpenses.find(
-      (exp) => exp.amount === maxAmount,
-    )!;
-    const lowestExpense = userExpenses.find((exp) => exp.amount === minAmount)!;
-
-    const currentMonth = getCurrentMonth();
-    const currentMonthExpenses = userExpenses.filter(
-      (exp) => getMonthString(new Date(exp.date)) === currentMonth,
-    );
-    const currentMonthTotal = currentMonthExpenses.reduce(
-      (sum, exp) => sum + exp.amount,
-      0,
-    );
-
-    const lastMonth = getLastMonth();
-    const lastMonthExpenses = userExpenses.filter(
-      (exp) => getMonthString(new Date(exp.date)) === lastMonth,
-    );
-    const lastMonthTotal = lastMonthExpenses.reduce(
-      (sum, exp) => sum + exp.amount,
-      0,
-    );
+    const highestExpense = mapExpense(extremes.rows[0]);
+    const lowestExpense = mapExpense(extremes.rows[1] ?? extremes.rows[0]);
+    const currentMonthTotal = Number(summary.current_month_total);
+    const lastMonthTotal = Number(summary.last_month_total);
 
     let monthlyChange = 0;
 
-    // lastMonthTotal = 400
-    // currentMonthTotal = 500
-    // 500 - 400 = 100$
-    // ((thisMonth - lastMonth) / (lastMonth)) * 100
-    // 100 / 400 = 0.25 * 100 = 25%
     if (lastMonthTotal > 0) {
-      monthlyChange =
-        ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
+      monthlyChange = ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
       monthlyChange = Math.round(monthlyChange * 10) / 10;
     } else if (currentMonthTotal > 0) {
       monthlyChange = 100;
     }
 
     const stats: DashboardStats = {
-      totalExpenses: Math.round(totalExpenses * 100) / 100,
-      expenseCount: userExpenses.length,
-      roundedAverageExpenseAmount,
+      totalExpenses: Number(summary.total_expenses),
+      expenseCount: Number(summary.expense_count),
+      roundedAverageExpenseAmount: Number(summary.rounded_average_expense_amount),
       highestExpense,
       lowestExpense,
-      lastMonthTotal: Math.round(lastMonthTotal * 100) / 100,
-      currentMonthTotal: Math.round(currentMonthTotal * 100) / 100,
+      currentMonthTotal,
+      lastMonthTotal,
       monthlyChange,
     };
 
@@ -162,17 +184,36 @@ export const getDashboardStats = asyncHandler(
 
 export const getSpendingTrends = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
+    await ensureUser(req.userId);
 
-    const user = await User.findOne({ _id: userId });
+    const result = await query<{
+      month_date: Date;
+      total: string | number;
+      count: string | number;
+    }>(
+      `WITH months AS (
+         SELECT generate_series(
+           DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months',
+           DATE_TRUNC('month', CURRENT_DATE),
+           INTERVAL '1 month'
+         ) AS month_date
+       )
+       SELECT
+         months.month_date,
+         COALESCE(ROUND(SUM(expenses.amount)::numeric, 2), 0) AS total,
+         COUNT(expenses.id)::int AS count
+       FROM months
+       LEFT JOIN expenses
+         ON DATE_TRUNC('month', expenses.date) = months.month_date
+        AND expenses.user_id = $1
+       GROUP BY months.month_date
+       ORDER BY months.month_date ASC`,
+      [Number(req.userId)],
+    );
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    const hasExpenses = result.rows.some((row) => Number(row.count) > 0);
 
-    const userExpenses = await Expense.find({ userId });
-
-    if (userExpenses.length === 0) {
+    if (!hasExpenses) {
       sendSuccess(
         res,
         [],
@@ -181,28 +222,11 @@ export const getSpendingTrends = asyncHandler(
       return;
     }
 
-    const trends = [];
-    const currentDate = new Date();
-
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date();
-      date.setMonth(currentDate.getMonth() - i);
-      const monthString = getMonthString(date);
-
-      const monthExpenses = userExpenses.filter(
-        (exp) => getMonthString(new Date(exp.date)) === monthString,
-      );
-      const monthTotal = monthExpenses.reduce(
-        (sum, exp) => sum + exp.amount,
-        0,
-      );
-
-      trends.push({
-        month: monthString,
-        total: Math.round(monthTotal * 100) / 100,
-        count: monthExpenses.length,
-      });
-    }
+    const trends = result.rows.map((row) => ({
+      month: getMonthString(new Date(row.month_date)),
+      total: Number(row.total),
+      count: Number(row.count),
+    }));
 
     sendSuccess(res, trends, "Spending trends retrieved.");
   },
@@ -210,13 +234,7 @@ export const getSpendingTrends = asyncHandler(
 
 export const getPeriodStats = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    await ensureUser(req.userId);
 
     const days = Number(req.query.days);
 
@@ -228,23 +246,32 @@ export const getPeriodStats = asyncHandler(
       throw new AppError("Days must be between 1 and 365", 400);
     }
 
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
+    const result = await query<{
+      category: string;
+      total: string | number;
+      count: string | number;
+      percentage: string | number;
+    }>(
+      `SELECT
+         category,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count,
+         ROUND((SUM(amount) / NULLIF(SUM(SUM(amount)) OVER (), 0) * 100)::numeric, 1) AS percentage
+       FROM expenses
+       WHERE user_id = $1
+         AND date >= DATE_TRUNC('day', CURRENT_TIMESTAMP) - (($2::int) * INTERVAL '1 day')
+         AND date <= CURRENT_TIMESTAMP
+       GROUP BY category
+       ORDER BY SUM(amount) DESC`,
+      [Number(req.userId), days],
+    );
 
-    const userExpenses = await Expense.find({ userId: userId });
+    if (result.rows.length === 0) {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
 
-    // console.log("User Expenses:", userExpenses.length);
-
-    const periodExpenses = userExpenses.filter((expense) => {
-      const expenseDate = new Date(expense.date);
-      return expenseDate >= startDate && expenseDate <= endDate;
-    });
-
-    // console.log("Period Expenses:", periodExpenses.length);
-
-    if (periodExpenses.length === 0) {
       return sendSuccess(
         res,
         {
@@ -258,47 +285,20 @@ export const getPeriodStats = asyncHandler(
       );
     }
 
-    const total = periodExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const data = result.rows.map((row) => ({
+      category: row.category,
+      total: Number(row.total),
+      count: Number(row.count),
+      percentage: Number(row.percentage),
+    }));
 
-    const categoryBreakdown = periodExpenses.reduce(
-      (acc, expense) => {
-        if (!acc[expense.category]) {
-          acc[expense.category] = { total: 0, count: 0 };
-        }
-
-        acc[expense.category].total += expense.amount;
-        acc[expense.category].count += 1;
-        return acc;
-      },
-      {} as Record<string, { total: number; count: number }>,
-    );
-
-    const categoryArray = Object.entries(categoryBreakdown).map(
-      ([category, data]) => ({
-        category,
-        total: Math.round(data.total * 100) / 100,
-        // averageAmount: Math.round(average * 100) / 100,
-        count: data.count,
-        percentage: Math.round((data.total / total) * 1000) / 10,
-      }),
-    );
-
-    // console.log("Category Breakdown:", categoryBreakdown);
-
-    // categoryArray.sort((a, b) => b.total - a.total);
-    sendSuccess(res, categoryArray, `Last ${days} days spending retrieved`);
+    sendSuccess(res, data, `Last ${days} days spending retrieved`);
   },
 );
 
 export const getMonthlyTotals = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    await ensureUser(req.userId);
 
     const year = req.query.year
       ? Number(req.query.year)
@@ -316,44 +316,33 @@ export const getMonthlyTotals = asyncHandler(
       );
     }
 
-    const userExpenses = await Expense.find({ userId });
+    const result = await query<{
+      month_date: Date;
+      total: string | number;
+      count: string | number;
+    }>(
+      `SELECT
+         DATE_TRUNC('month', date) AS month_date,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count
+       FROM expenses
+       WHERE user_id = $1
+         AND EXTRACT(YEAR FROM date) = $2
+       GROUP BY DATE_TRUNC('month', date)
+       ORDER BY DATE_TRUNC('month', date) ASC`,
+      [Number(req.userId), year],
+    );
 
-    const yearExpenses = userExpenses.filter((exp) => {
-      const expenseYear = new Date(exp.date).getFullYear();
-      return expenseYear === year;
-    });
-
-    if (yearExpenses.length === 0) {
+    if (result.rows.length === 0) {
       sendSuccess(res, [], `No expenses found for ${year}`);
       return;
     }
 
-    const monthlyTotals = yearExpenses.reduce(
-      (acc, expense) => {
-        const monthString = getMonthString(new Date(expense.date));
-
-        if (!acc[monthString]) {
-          acc[monthString] = {
-            month: monthString,
-            total: 0,
-            count: 0,
-          };
-        }
-
-        acc[monthString].total += expense.amount;
-        acc[monthString].count += 1;
-        return acc;
-      },
-      {} as Record<string, MonthlyTotals>,
-    );
-
-    const monthlyArray = Object.values(monthlyTotals);
-
-    monthlyArray.sort((a, b) => a.month.localeCompare(b.month));
-
-    monthlyArray.forEach((month) => {
-      month.total = Math.round(month.total * 100) / 100;
-    });
+    const monthlyArray: MonthlyTotals[] = result.rows.map((row) => ({
+      month: getMonthString(new Date(row.month_date)),
+      total: Number(row.total),
+      count: Number(row.count),
+    }));
 
     sendSuccess(res, monthlyArray, `Monthly total for ${year} retrieved.`);
   },
@@ -361,61 +350,42 @@ export const getMonthlyTotals = asyncHandler(
 
 export const getCurrentMonthExpenses = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
+    await ensureUser(req.userId);
 
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    const userExpenses = await Expense.find({ userId: userId });
-
-    if (userExpenses.length === 0) {
-      return sendSuccess(res, [], "No expenses found");
-    }
-
-    const currentMonth = getCurrentMonth();
-
-    const currentMonthExpenses = userExpenses.filter(
-      (exp) => getMonthString(new Date(exp.date)) === currentMonth,
+    const result = await query<{
+      category: string;
+      total: string | number;
+      count: string | number;
+      percentage: string | number;
+    }>(
+      `SELECT
+         category,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count,
+         ROUND((SUM(amount) / NULLIF(SUM(SUM(amount)) OVER (), 0) * 100)::numeric, 1) AS percentage
+       FROM expenses
+       WHERE user_id = $1
+         AND DATE_TRUNC('month', date) = DATE_TRUNC('month', CURRENT_DATE)
+       GROUP BY category
+       ORDER BY SUM(amount) DESC`,
+      [Number(req.userId)],
     );
 
-    if (currentMonthExpenses.length === 0) {
+    if (result.rows.length === 0) {
       return sendSuccess(res, [], "No expenses found for current month");
     }
 
-    const categoryBreakdown = currentMonthExpenses.reduce(
-      (acc, expense) => {
-        if (!acc[expense.category]) {
-          acc[expense.category] = { total: 0, count: 0 };
-        }
+    const currentMonth = getMonthString(new Date());
+    const data = result.rows.map((row) => ({
+      category: row.category,
+      total: Number(row.total),
+      count: Number(row.count),
+      percentage: Number(row.percentage),
+    }));
 
-        acc[expense.category].total += expense.amount;
-        acc[expense.category].count += 1;
-        return acc;
-      },
-      {} as Record<string, { total: number; count: number }>,
-    );
-
-    const grandTotal = Object.values(categoryBreakdown).reduce(
-      (sum, cat) => sum + cat.total,
-      0,
-    );
-
-    const categoryArray = Object.entries(categoryBreakdown).map(
-      ([category, data]) => ({
-        category,
-        total: Math.round(data.total * 100) / 100,
-        count: data.count,
-        percentage: Math.round((data.total / grandTotal) * 1000) / 10,
-      }),
-    );
-
-    categoryArray.sort((a, b) => b.total - a.total);
     sendSuccess(
       res,
-      categoryArray,
+      data,
       `Current month ${currentMonth} category breakdown retrieved`,
     );
   },
@@ -423,13 +393,7 @@ export const getCurrentMonthExpenses = asyncHandler(
 
 export const getYearlyCategoryStats = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    await ensureUser(req.userId);
 
     const currentYear = new Date().getFullYear();
     const year = req.query.year ? Number(req.query.year) : currentYear;
@@ -445,99 +409,96 @@ export const getYearlyCategoryStats = asyncHandler(
       );
     }
 
-    const userExpenses = await Expense.find({ userId });
+    const result = await query<{
+      month_date: Date;
+      category: string;
+      total: string | number;
+      count: string | number;
+    }>(
+      `SELECT
+         DATE_TRUNC('month', date) AS month_date,
+         category,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count
+       FROM expenses
+       WHERE user_id = $1
+         AND EXTRACT(YEAR FROM date) = $2
+       GROUP BY DATE_TRUNC('month', date), category
+       ORDER BY DATE_TRUNC('month', date) ASC, category ASC`,
+      [Number(req.userId), year],
+    );
 
-    const yearExpenses = userExpenses.filter((exp) => {
-      const expenseYear = new Date(exp.date).getFullYear();
-      return expenseYear === year;
-    });
-
-    if (yearExpenses.length === 0) {
+    if (result.rows.length === 0) {
       return sendSuccess(res, [], `No expenses found for the year ${year}`);
     }
 
-    const monthlyData: Record<
+    const monthlyData = new Map<
       string,
-      Record<string, { total: number; count: number }>
-    > = {};
+      { month: string; total: number; categories: Array<{ category: string; total: number; count: number }> }
+    >();
 
-    yearExpenses.forEach((expense) => {
-      const monthString = getMonthString(new Date(expense.date));
-      const category = expense.category;
+    result.rows.forEach((row) => {
+      const month = getMonthString(new Date(row.month_date));
+      const total = Number(row.total);
+      const count = Number(row.count);
 
-      if (!monthlyData[monthString]) {
-        monthlyData[monthString] = {};
+      if (!monthlyData.has(month)) {
+        monthlyData.set(month, {
+          month,
+          total: 0,
+          categories: [],
+        });
       }
 
-      if (!monthlyData[monthString][category]) {
-        monthlyData[monthString][category] = { total: 0, count: 0 };
-      }
-
-      monthlyData[monthString][category].total += expense.amount;
-      monthlyData[monthString][category].count += 1;
+      const entry = monthlyData.get(month)!;
+      entry.total += total;
+      entry.categories.push({
+        category: row.category,
+        total,
+        count,
+      });
     });
 
-    const result = Object.entries(monthlyData).map(([month, categories]) => {
-      const categoryArray = Object.entries(categories).map(
-        ([category, data]) => ({
-          category,
-          total: Math.round(data.total * 100) / 100,
-          count: data.count,
-        }),
-      );
+    const data = Array.from(monthlyData.values()).map((entry) => ({
+      month: entry.month,
+      total: Math.round(entry.total * 100) / 100,
+      categories: entry.categories,
+    }));
 
-      const monthTotal = categoryArray.reduce((sum, cat) => sum + cat.total, 0);
-
-      return {
-        month,
-        total: Math.round(monthTotal * 100) / 100,
-        categories: categoryArray,
-      };
-    });
-
-    result.sort((a, b) => a.month.localeCompare(b.month));
-
-    sendSuccess(res, result, `Yearly category breakdown for the year ${year}`);
+    sendSuccess(res, data, `Yearly category breakdown for the year ${year}`);
   },
 );
 
 export const getAllYears = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
+    await ensureUser(req.userId);
 
-    const user = await User.findOne({ _id: userId });
+    const result = await query<{
+      year: string | number;
+      total: string | number;
+      count: string | number;
+    }>(
+      `SELECT
+         EXTRACT(YEAR FROM date)::int AS year,
+         ROUND(SUM(amount)::numeric, 2) AS total,
+         COUNT(*)::int AS count
+       FROM expenses
+       WHERE user_id = $1
+       GROUP BY EXTRACT(YEAR FROM date)
+       ORDER BY year DESC`,
+      [Number(req.userId)],
+    );
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    const userExpenses = await Expense.find({ userId });
-
-    if (userExpenses.length === 0) {
+    if (result.rows.length === 0) {
       return sendSuccess(res, [], "No expenses found for this user");
     }
 
-    const yearTotals: Record<number, { total: number; count: number }> = {};
-
-    userExpenses.forEach((expense) => {
-      const year = new Date(expense.date).getFullYear();
-
-      if (!yearTotals[year]) {
-        yearTotals[year] = { total: 0, count: 0 };
-      }
-
-      yearTotals[year].total += expense.amount;
-      yearTotals[year].count += 1;
-    });
-
-    const yearArray = Object.entries(yearTotals).map(([year, data]) => ({
-      year: Number(year),
-      total: Math.round(data.total * 100) / 100,
-      count: data.count,
+    const data = result.rows.map((row) => ({
+      year: Number(row.year),
+      total: Number(row.total),
+      count: Number(row.count),
     }));
 
-    yearArray.sort((a, b) => b.year - a.year);
-
-    sendSuccess(res, yearArray, "All years spending retrieved");
+    sendSuccess(res, data, "All years spending retrieved");
   },
 );

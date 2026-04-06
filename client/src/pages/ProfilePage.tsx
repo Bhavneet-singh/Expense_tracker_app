@@ -1,4 +1,3 @@
-import AvatarUpload from "@/components/Profile/AvatarUpload";
 import DeleteAccountModal from "@/components/Profile/DeleteAccountModal";
 import ExportDataButton from "@/components/Profile/ExportDataButton";
 import ProfileEditForm from "@/components/Profile/ProfileEditForm";
@@ -50,10 +49,6 @@ export default function ProfilePage() {
               {error}
             </div>
           )}
-          <div>
-            <AvatarUpload />
-          </div>
-
           <div className="content-center lg:self-center lg:place-self-start">
             <ExportDataButton />
           </div>

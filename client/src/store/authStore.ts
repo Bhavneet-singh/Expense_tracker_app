@@ -6,12 +6,12 @@ import {
   login as loginService,
   getProfile as getProfileService,
   updateProfile as updateProfileService,
-  uploadAvatar as uploadAvatarService,
-  deleteAvatar as deleteAvatarService,
   deleteAccount as deleteAccountService,
   exportData as exportDataService,
 } from "@/services/authService";
 import { AxiosError } from "axios";
+
+const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
 
 interface AuthStore extends AuthState {
   signup: (name: string, email: string, password: string) => Promise<boolean>;
@@ -22,9 +22,6 @@ interface AuthStore extends AuthState {
     email?: string;
     password?: string;
   }) => Promise<void>;
-
-  uploadAvatar: (file: File) => Promise<void>;
-  deleteAvatar: () => Promise<void>;
   exportData: () => Promise<void>;
   deleteAccount: () => Promise<void>;
 
@@ -33,10 +30,10 @@ interface AuthStore extends AuthState {
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
-  token: localStorage.getItem(TOKEN_KEY) || null,
+  token: getStoredToken(),
   isLoading: false,
   error: null,
-  isAuthenticated: false,
+  isAuthenticated: Boolean(getStoredToken()),
 
   exportedData: null,
 
@@ -108,13 +105,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
       if (response.data) {
         set({
           user: response.data,
+          isAuthenticated: true,
           isLoading: false,
           error: null,
         });
       }
     } catch (error) {
+      localStorage.removeItem(TOKEN_KEY);
       const err = error as AxiosError<{ error: string }>;
       set({
+        user: null,
+        token: null,
         error: err.response?.data?.error,
         isLoading: false,
         isAuthenticated: false,
@@ -135,56 +136,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
       if (response.data) {
         set({
           user: response.data,
+          isAuthenticated: true,
           isLoading: false,
           error: null,
         });
       }
-    } catch (error) {
-      const err = error as AxiosError<{ error: string }>;
-      set({
-        error: err.response?.data?.error,
-        isLoading: false,
-        isAuthenticated: false,
-      });
-    }
-  },
-
-  uploadAvatar: async (file: File) => {
-    set({ isLoading: true, error: null });
-
-    try {
-      const response = await uploadAvatarService(file);
-
-      if (response.data) {
-        const { avatar } = response.data;
-
-        set((state) => ({
-          user: state.user ? { ...state.user, avatar } : null,
-          isLoading: false,
-          error: null,
-        }));
-      }
-    } catch (error) {
-      const err = error as AxiosError<{ error: string }>;
-      set({
-        error: err.response?.data?.error,
-        isLoading: false,
-        isAuthenticated: false,
-      });
-    }
-  },
-
-  deleteAvatar: async () => {
-    set({ isLoading: true, error: null });
-
-    try {
-      await deleteAvatarService();
-
-      set((state) => ({
-        user: state.user ? { ...state.user, avatar: undefined } : null,
-        isLoading: false,
-        error: null,
-      }));
     } catch (error) {
       const err = error as AxiosError<{ error: string }>;
       set({

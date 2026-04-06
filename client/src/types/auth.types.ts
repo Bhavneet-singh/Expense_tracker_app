@@ -25,11 +25,6 @@ export interface AuthState {
   exportedData: ExportData | null;
 }
 
-export interface Avatar {
-  avatar: string;
-  avatarUrl: string;
-}
-
 export interface ExportData {
   user: User;
   expenses: Array<{

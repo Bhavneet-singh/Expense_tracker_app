@@ -1,26 +1,25 @@
 import { Request, Response, NextFunction } from "express";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
 import { AppError } from "../middleware/errorHandler";
-import User from "../models/User";
+import {
+  deleteUserById,
+  findUserByEmailExcludingId,
+  findUserById,
+  updateUser,
+} from "../models/User";
 import bcrypt from "bcryptjs";
-import path from "node:path";
-import fs from "node:fs";
-import Expense from "../models/Expense";
+import { deleteExpensesByUserId, listExpensesByUserId } from "../models/Expense";
 
 export const getProfile = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
+    const user = await findUserById(userId);
 
     if (!user) {
       throw new AppError("User not found", 404);
     }
 
-    const userObject = user.toObject();
-
-    const { password: _, ...userWithoutPassword } = userObject;
-
+    const { password: _, ...userWithoutPassword } = user;
     sendSuccess(res, userWithoutPassword, "Profile retrieved successfully!");
   },
 );
@@ -28,20 +27,12 @@ export const getProfile = asyncHandler(
 export const updateProfile = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { name, email, password } = req.body;
-
     const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
+    const user = await findUserById(userId);
 
     if (!user) {
       throw new AppError("User not found", 404);
     }
-
-    // const user = await User.findOne({ _id: userId });
-
-    // if (!user) {
-    //   throw new AppError("User not found!", 404);
-    // }
 
     if (!name && !email && !password) {
       throw new AppError(
@@ -76,140 +67,46 @@ export const updateProfile = asyncHandler(
     }
 
     if (email && email !== user.email) {
-      const emailExists = await User.findOne({
-        email: email,
-        _id: { $ne: userId },
-      });
+      const emailExists = await findUserByEmailExcludingId(email, userId);
 
       if (emailExists) {
         throw new AppError("Email already in use!", 400);
       }
     }
 
-    if (name) {
-      user.name = name;
+    const hashedPassword = password
+      ? await bcrypt.hash(password, 10)
+      : undefined;
+
+    const updatedUser = await updateUser(userId, {
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    if (!updatedUser) {
+      throw new AppError("User not found", 404);
     }
 
-    if (email) {
-      user.email = email;
-    }
-
-    if (password) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      user.password = hashedPassword;
-    }
-
-    const updatedUser = await user.save();
-
-    const userObject = updatedUser.toObject();
-
-    const { password: _, ...userWithoutPassword } = userObject;
-
+    const { password: _, ...userWithoutPassword } = updatedUser;
     sendSuccess(res, userWithoutPassword, "Profile updated successfully!");
-  },
-);
-
-export const uploadAvatar = asyncHandler(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    if (!req.file) {
-      throw new AppError("Please upload an image file", 400);
-    }
-
-    const filename = req.file.filename;
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    if (user.avatar) {
-      const oldAvatarPath = path.join("upload", "avatars", user.avatar);
-
-      if (fs.existsSync(oldAvatarPath)) {
-        fs.unlinkSync(oldAvatarPath);
-      }
-    }
-
-    user.avatar = filename;
-
-    await user.save();
-
-    sendSuccess(
-      res,
-      { avatar: filename, avatarUrl: `/uploads/avatars/${filename}` },
-      "Avatar uploaded successfully",
-    );
-  },
-);
-
-export const getAvatar = asyncHandler(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    if (!user.avatar) {
-      throw new AppError("No avatar found for this user", 404);
-    }
-
-    const avatarPath = path.join("uploads", "avatars", user.avatar);
-
-    if (!fs.existsSync(avatarPath)) {
-      throw new AppError("Avatar file not found", 404);
-    }
-
-    res.sendFile(path.resolve(avatarPath));
-  },
-);
-
-export const deleteAvatar = asyncHandler(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    if (!user.avatar) {
-      throw new AppError("No avatar found for this user", 404);
-    }
-
-    const avatarPath = path.join("uploads", "avatars", user.avatar);
-
-    if (fs.existsSync(avatarPath)) {
-      fs.unlinkSync(avatarPath);
-    }
-
-    user.avatar = undefined;
-
-    await user.save();
-
-    sendSuccess(res, null, "Avatar deleted successfully");
   },
 );
 
 export const exportData = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
+    const user = await findUserById(userId);
 
     if (!user) {
       throw new AppError("User not found", 404);
     }
 
-    const expenses = await Expense.find({ userId });
-
-    const userObject = user.toObject();
-    const { password: _, ...userWithoutPassword } = userObject;
+    const { expenses, total } = await listExpensesByUserId(userId, {
+      limit: 10_000,
+      offset: 0,
+    });
+    const { password: _, ...userWithoutPassword } = user;
 
     if (expenses.length === 0) {
       return sendSuccess(
@@ -219,7 +116,7 @@ export const exportData = asyncHandler(
           expenses: [],
           summary: {
             totalExpenses: 0,
-            expenseCount: 0,
+            expenseCount: total,
           },
           exportedAt: new Date().toISOString(),
         },
@@ -234,7 +131,7 @@ export const exportData = asyncHandler(
       expenses,
       summary: {
         totalExpenses: Math.round(totalExpenses * 100) / 100,
-        expenseCount: expenses.length,
+        expenseCount: total,
       },
       exportedAt: new Date().toISOString(),
     };
@@ -246,24 +143,14 @@ export const exportData = asyncHandler(
 export const deleteAccount = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.userId;
-
-    const user = await User.findOne({ _id: userId });
+    const user = await findUserById(userId);
 
     if (!user) {
       throw new AppError("User not found", 404);
     }
 
-    await Expense.deleteMany({ userId });
-
-    if (user.avatar) {
-      const avatarPath = path.join("uploads", "avatars", user.avatar);
-
-      if (fs.existsSync(avatarPath)) {
-        fs.unlinkSync(avatarPath);
-      }
-    }
-
-    await User.findByIdAndDelete(userId);
+    await deleteExpensesByUserId(userId);
+    await deleteUserById(userId);
 
     sendSuccess(
       res,

@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from "express";
+import { logger } from "../utils/logger";
 
 export class AppError extends Error {
   statusCode: number;
@@ -17,19 +18,10 @@ export const errorHandler = (
   err: any,
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   let statusCode = err.statusCode || 500;
   let message = err.message || "Something went wrong";
-
-  if (process.env.NODE_ENV === "development") {
-    console.error("Error:", err);
-    console.error("Stack:", err.stack);
-  } else {
-    if (!err.isOperational) {
-      console.error("Unexpected error:", err);
-    }
-  }
 
   if (err.name === "ValidationError") {
     statusCode = 400;
@@ -39,15 +31,18 @@ export const errorHandler = (
       .join(", ");
   }
 
-  if (err.code === 11000) {
+  if (err.code === 11000 || err.code === "23505") {
     statusCode = 400;
-    const field = Object.keys(err.keyValue)[0];
+    const field =
+      err?.constraint === "users_email_key"
+        ? "email"
+        : Object.keys(err.keyValue || {})[0] || "Record";
     message = `${field} already exists`;
   }
 
-  if (err.name === "CastError") {
+  if (err.name === "CastError" || err.code === "22P02") {
     statusCode = 400;
-    message = `Invalid ${err.path}: ${err.value}`;
+    message = err.path ? `Invalid ${err.path}: ${err.value}` : "Invalid input";
   }
 
   if (err.name === "JsonWebTokenError") {
@@ -58,6 +53,22 @@ export const errorHandler = (
   if (err.name === "TokenExpiredError") {
     statusCode = 401;
     message = "Your token has expired. Please log in again.";
+  }
+
+  if (statusCode >= 500) {
+    logger.requestError("Request failed with server error", req, err, {
+      statusCode,
+    });
+  } else {
+    logger.warn("Request failed", {
+      method: req.method,
+      url: req.originalUrl,
+      ip: req.ip,
+      userId: req.userId ?? null,
+      statusCode,
+      errorName: err?.name,
+      errorMessage: err?.message,
+    });
   }
 
   const response: any = {

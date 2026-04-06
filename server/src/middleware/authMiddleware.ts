@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { AppError } from "./errorHandler";
 import jwt from "jsonwebtoken";
+import { logger } from "../utils/logger";
 
 declare global {
   namespace Express {
@@ -13,7 +14,7 @@ declare global {
 export const requireAuth = (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   const authHeader = req.headers.authorization;
 
@@ -28,14 +29,22 @@ export const requireAuth = (
 
   const token = parts[1];
   const secret = process.env.JWT_SECRET;
+
   if (!secret) {
+    logger.error("JWT secret is missing during auth middleware execution", {
+      method: req.method,
+      url: req.originalUrl,
+    });
     throw new Error("JWT_SECRET is not defined in environment variables");
   }
 
-  // {userId: "123", iat: 13165465132, exp: 123165465746512}
-  const decoded = jwt.verify(token, secret) as { userId: string };
+  try {
+    const decoded = jwt.verify(token, secret) as { userId: string };
 
-  req.userId = decoded.userId;
-
-  next();
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    logger.requestError("Authentication token verification failed", req, error);
+    throw error;
+  }
 };

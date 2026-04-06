@@ -1,42 +1,120 @@
 # PennyWise Expense Tracker
 
-Full-stack expense tracking app with a React frontend and an Express API backend.  
-The backend uses PostgreSQL with Prisma and JWT-based authentication.
+PennyWise is a full-stack personal expense tracking application with:
+
+- React frontend (`client/`)
+- Express + TypeScript API (`server/`)
+- PostgreSQL database with Prisma models
+- JWT-based authentication for protected routes
+
+This README is intentionally detailed and aligned with the current source code in this repository.
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Current Feature Set](#current-feature-set)
+- [Tech Stack](#tech-stack)
+- [Repository Structure](#repository-structure)
+- [Request/Response Conventions](#requestresponse-conventions)
+- [Authentication Model](#authentication-model)
+- [Backend API (Detailed)](#backend-api-detailed)
+- [Frontend Routing and Data Flow](#frontend-routing-and-data-flow)
+- [Database Schema and Data Access](#database-schema-and-data-access)
+- [Environment Variables](#environment-variables)
+- [Run Locally](#run-locally)
+- [Run with Docker Compose](#run-with-docker-compose)
+- [Testing and Performance](#testing-and-performance)
+- [Deployment Guidance (EC2)](#deployment-guidance-ec2)
+- [Known Caveats](#known-caveats)
+
+## Architecture
+
+### High-level flow
+
+1. User interacts with React pages.
+2. Client stores auth token in local storage (`pennywise_token`).
+3. Axios interceptor adds `Authorization: Bearer <token>` to API calls.
+4. Express routes call `requireAuth` for protected endpoints.
+5. Controllers validate input and call model/db functions.
+6. Models use Prisma for CRUD; analytics uses SQL via `pg`.
+7. Responses use a consistent JSON envelope (`success`, `data`, `message`, optional `meta`).
+
+### Backend boot sequence
+
+Backend entrypoint: `server/src/index.ts`
+
+- Loads env vars (`dotenv.config()`).
+- Creates app from `createApp()` (`server/src/app.ts`).
+- Runs `connectDB()` before listening.
+- On successful startup, logs server URL and environment.
+- Handles process-level `uncaughtException` and `unhandledRejection`.
+
+### Express app composition
+
+In `server/src/app.ts`:
+
+- CORS allowed origin: `http://localhost:3000`
+- JSON parser: `express.json()`
+- Request timing middleware: `requestTiming` (adds `X-Response-Time`)
+- Health endpoints:
+  - `GET /`
+  - `GET /health`
+- API route mounts:
+  - `/api/auth`
+  - `/api/expenses`
+  - `/api/profile`
+  - `/api/analytics`
+- 404 handler
+- Global error handler (`errorHandler`)
+
+## Current Feature Set
+
+- User signup and login
+- JWT-protected user sessions
+- Expense CRUD with validation
+- Pagination/filter/sort for expenses
+- Dashboard + advanced analytics endpoints
+- Profile read/update
+- User data export
+- Account deletion
+- Backend tests (Jest + Supertest)
+- k6 load test scenario file
 
 ## Tech Stack
 
-### Frontend (`client/`)
+### Frontend (`client`)
 
-- React 19 + TypeScript
-- Vite
+- React 19
+- TypeScript
+- Vite 7
 - TanStack Router
 - Zustand
 - Axios
 - Recharts
+- Lucide React
 - Tailwind CSS v4
 
-### Backend (`server/`)
+### Backend (`server`)
 
-- Node.js + Express 5 + TypeScript
+- Node.js
+- Express 5
+- TypeScript
 - PostgreSQL
-- Prisma ORM (`@prisma/client`)
-- `pg` for SQL queries (analytics)
+- Prisma (`@prisma/client`)
+- `pg` (direct SQL in analytics + DB bootstrap)
 - JWT (`jsonwebtoken`)
-- Password hashing (`bcryptjs`)
+- `bcryptjs`
+- `cors`, `dotenv`
+- `nodemon`, `tsx`
+
+### Tooling
+
+- Jest + ts-jest + Supertest
 - Docker + Docker Compose
+- k6 load testing script
+- InfluxDB + Grafana service definitions in compose for performance visualization
 
-## Core Features
-
-- User signup and login with JWT auth
-- Protected routes on frontend and backend
-- Expense CRUD (create, list, get by id, update, delete)
-- Dashboard and analytics endpoints
-- Profile management
-- Avatar upload/delete
-- Export user + expenses data
-- Account deletion
-
-## Project Structure
+## Repository Structure
 
 ```text
 Expense_Tracker_App/
@@ -49,34 +127,394 @@ Expense_Tracker_App/
 │   │   ├── store/
 │   │   ├── types/
 │   │   ├── App.tsx
-│   │   └── main.tsx
-│   └── package.json
+│   │   ├── main.tsx
+│   │   └── routeTree.gen.ts
+│   ├── package.json
+│   └── vite.config.ts
 ├── server/
 │   ├── prisma/
 │   │   └── schema.prisma
 │   ├── src/
+│   │   ├── __tests__/
+│   │   ├── app.ts
+│   │   ├── index.ts
 │   │   ├── config/
 │   │   ├── controllers/
 │   │   ├── middleware/
 │   │   ├── models/
 │   │   ├── routes/
-│   │   ├── utils/
-│   │   └── index.ts
+│   │   ├── types/
+│   │   └── utils/
+│   ├── loadtest/expenses.k6.js
 │   ├── docker-compose.yml
 │   ├── Dockerfile
 │   └── package.json
+├── PROJECT_FLOWCHART.md
 └── README.md
 ```
 
-## Prerequisites
+## Request/Response Conventions
 
-- Node.js 18+
-- npm
-- Docker Desktop (recommended for local PostgreSQL setup)
+### Success format
+
+All successful API responses are sent through `sendSuccess(...)`:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": "Human-readable message",
+  "meta": {
+    "limit": 20,
+    "offset": 0,
+    "total": 150,
+    "hasMore": true
+  }
+}
+```
+
+`meta` appears where pagination is used.
+
+### Error format
+
+Global error handler returns:
+
+```json
+{
+  "success": false,
+  "error": "Error message"
+}
+```
+
+In development mode, stack trace is included as `stack`.
+
+### Common HTTP error handling
+
+- `400`: validation/input issues
+- `401`: missing/invalid/expired JWT, or invalid login credentials
+- `404`: missing route/resource
+- `500`: unexpected server failure
+
+## Authentication Model
+
+- Login returns a JWT token.
+- Client stores token under `pennywise_token` in local storage.
+- Axios request interceptor adds bearer token to all requests.
+- Response interceptor:
+  - if `401`, token is removed
+  - user is redirected to `/login` (except when already on `/login` or `/signup`)
+
+### Protected route requirement
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+`requireAuth`:
+
+- validates header presence and shape
+- verifies JWT with `JWT_SECRET`
+- injects `req.userId` for controllers
+
+## Backend API (Detailed)
+
+Base URL (local): `http://localhost:8000/api`
+
+### Public utility endpoints
+
+- `GET /` -> basic service text response
+- `GET /health` -> status, uptime, timestamp
+
+### Auth routes (`/api/auth`)
+
+#### `POST /signup`
+
+Creates an account.
+
+Body:
+
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "StrongPass1!"
+}
+```
+
+Validation:
+
+- `name` required, min 2, max 50
+- `email` required, valid format
+- `password` required, min 8
+- password must contain:
+  - uppercase
+  - lowercase
+  - number
+  - special char from `@$!%*?&`
+- rejects duplicate email
+
+Success:
+
+- `201`
+- returns `user` object (without password)
+- does **not** issue JWT on signup
+
+#### `POST /login`
+
+Body:
+
+```json
+{
+  "email": "john@example.com",
+  "password": "StrongPass1!"
+}
+```
+
+Validation:
+
+- both fields required
+- invalid credentials -> `401`
+
+Success:
+
+- returns `user` (without password) and `token`
+
+---
+
+### Expense routes (`/api/expenses`) - protected
+
+#### `GET /api/expenses`
+
+Query params:
+
+- `category` (optional)
+- `sort` (optional): `amount`, `-amount`, `date`, `-date`
+- `limit` (optional, default `20`, max `100`)
+- `offset` (optional, default `0`)
+
+Validation:
+
+- `limit` must be integer `1..100`
+- `offset` must be integer `>= 0`
+
+Success:
+
+- array of expenses in `data`
+- includes pagination `meta`
+
+#### `GET /api/expenses/:id`
+
+- Returns one expense scoped to authenticated user.
+- `404` if not found.
+
+#### `POST /api/expenses`
+
+Creates expense.
+
+Body:
+
+```json
+{
+  "amount": 129.5,
+  "category": "food",
+  "description": "Team lunch",
+  "date": "2026-04-06T10:30:00.000Z"
+}
+```
+
+Validation:
+
+- `amount` required, numeric, `> 0`, `<= 1000000`
+- `category` required and must be one of:
+  - `food`
+  - `transport`
+  - `utilities`
+  - `entertainment`
+  - `healthcare`
+  - `shopping`
+  - `education`
+  - `other`
+- `description` required, min 3, max 100
+- `date` cannot be in the future
+
+Success: `201` + created expense.
+
+#### `POST /api/expenses/:id`
+
+Updates expense (current code uses `POST`, not `PUT/PATCH`).
+
+- Any subset of fields can be supplied.
+- Field-level validation follows the same constraints as create.
+- Future date is rejected.
+- `404` if expense is not found for that user.
+
+#### `DELETE /api/expenses/:id`
+
+- Deletes one user-owned expense.
+- `404` if missing.
+
+---
+
+### Profile routes (`/api/profile`) - protected
+
+#### `GET /api/profile`
+
+- Returns authenticated user (without password).
+
+#### `PUT /api/profile`
+
+Updates user profile fields.
+
+Accepted body fields:
+
+- `name` (optional, min 2 if provided)
+- `email` (optional, valid format if provided, unique among other users)
+- `password` (optional, same policy as signup if provided)
+
+At least one of the above must be provided.
+
+#### `GET /api/profile/export`
+
+Returns export payload:
+
+- user (without password)
+- all expenses for user (up to 10,000 loaded)
+- summary:
+  - `totalExpenses`
+  - `expenseCount`
+- `exportedAt` timestamp
+
+#### `DELETE /api/profile/account`
+
+- Deletes all user expenses
+- Deletes user account
+- returns success message
+
+---
+
+### Analytics routes (`/api/analytics`) - protected
+
+Analytics queries run through SQL (`pg`) and return aggregated data.
+
+#### `GET /api/analytics/category`
+
+Category totals/count/percentage for all user expenses.
+
+#### `GET /api/analytics/dashboard`
+
+Returns dashboard stats:
+
+- total expenses
+- expense count
+- average expense amount (rounded)
+- highest expense
+- lowest expense
+- current month total
+- last month total
+- monthly percentage change
+
+#### `GET /api/analytics/trends`
+
+Last 6 months trend series using month buckets.
+
+#### `GET /api/analytics/period?days=30`
+
+Validations:
+
+- `days` required as number
+- allowed range: `1..365`
+
+Returns category stats within the period.
+
+#### `GET /api/analytics/monthly?year=2026`
+
+Validations:
+
+- year must be numeric
+- year range: `2000..(currentYear+1)`
+
+Returns monthly totals/count for the selected year.
+
+#### `GET /api/analytics/current-month`
+
+Category breakdown for current month only.
+
+#### `GET /api/analytics/yearly-categories?year=2026`
+
+Yearly month-by-month category distribution.
+
+#### `GET /api/analytics/all-years`
+
+Totals grouped by year.
+
+## Frontend Routing and Data Flow
+
+### Client entry
+
+- `client/src/main.tsx` mounts app
+- `client/src/App.tsx` creates and provides router
+- generated routes map in `client/src/routeTree.gen.ts`
+
+### Route pages
+
+- `/` -> Home
+- `/login`
+- `/signup`
+- `/dashboard` (protected)
+- `/expenses` (protected)
+- `/analytics` (protected)
+- `/profile` (protected)
+
+### API layer
+
+`client/src/services/api.ts`:
+
+- base URL: `VITE_API_BASE_URL` or fallback `http://localhost:8000/api`
+- token injection on request
+- global 401 handling
+
+## Database Schema and Data Access
+
+### Prisma schema
+
+Defined in `server/prisma/schema.prisma`.
+
+#### `User` model
+
+- `id` (auto-increment int, PK)
+- `name` (`varchar(50)`)
+- `email` (unique, `varchar(255)`)
+- `password` (`varchar(255)`)
+- `createdAt` / `updatedAt` mapped to `created_at` / `updated_at`
+
+#### `Expense` model
+
+- `id` (auto-increment int, PK)
+- `userId` -> FK to `User.id` (cascade delete)
+- `amount` (`decimal(12,2)`)
+- `category` (`varchar(50)`)
+- `description` (`varchar(100)`)
+- `date`, `createdAt`, `updatedAt`
+- indexes:
+  - `idx_expenses_user_id`
+  - `idx_expenses_user_date`
+
+### DB bootstrap behavior
+
+`server/src/config/db.ts`:
+
+- builds connection string from:
+  - `DATABASE_URL` first
+  - or `PG*` variables fallback
+- checks connectivity (`SELECT 1`)
+- creates tables/indexes if missing (`CREATE TABLE IF NOT EXISTS ...`)
+- connects Prisma client
 
 ## Environment Variables
 
-### Server (`server/.env`)
+### Backend (`server/.env`)
+
+Minimum required:
 
 ```env
 PORT=8000
@@ -85,48 +523,46 @@ JWT_SECRET=replace-with-strong-secret
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/expense-tracker
 ```
 
-### Client (`client/.env`)
+Optional split-postgres variables if `DATABASE_URL` is omitted:
+
+```env
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=expense-tracker
+PGUSER=postgres
+PGPASSWORD=postgres
+```
+
+### Frontend (`client/.env`)
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api
 ```
 
-## Local Development (Without Docker for API)
+## Run Locally
 
-1) Start PostgreSQL locally (or via Docker only for DB).
-
-2) Install backend dependencies:
+### 1) Backend setup
 
 ```bash
 cd server
 npm install
-```
-
-3) Generate Prisma client:
-
-```bash
 npm run prisma:generate
-```
-
-4) Start backend:
-
-```bash
 npm run dev
 ```
 
-Backend runs at `http://localhost:8000`.
+Backend: `http://localhost:8000`
 
-5) Install and run frontend:
+### 2) Frontend setup
 
 ```bash
-cd ../client
+cd client
 npm install
 npm run dev
 ```
 
-Frontend runs at `http://localhost:5173` (Vite default).
+Frontend: `http://localhost:3000`
 
-## Run With Docker Compose (Backend + DB + Tools)
+## Run with Docker Compose
 
 From `server/`:
 
@@ -135,170 +571,90 @@ cd server
 docker compose up -d --build
 ```
 
-Default exposed services:
+Services exposed by current compose file:
 
 - API: `http://localhost:8000`
-- Postgres: `localhost:5432`
+- PostgreSQL: `localhost:5432`
 - pgAdmin: `http://localhost:8080`
 - InfluxDB: `http://localhost:8086`
 - Grafana: `http://localhost:3001`
 
-To stop:
+Stop:
 
 ```bash
 docker compose down
 ```
 
-To stop and remove volumes:
+Stop + remove volumes:
 
 ```bash
 docker compose down -v
 ```
 
-## API Endpoints
+## Testing and Performance
 
-Base URL: `http://localhost:8000/api`
+### Backend tests
 
-### Auth (Public)
-
-- `POST /auth/signup`
-- `POST /auth/login`
-
-### Expenses (Protected)
-
-- `GET /expenses`
-- `GET /expenses/:id`
-- `POST /expenses`
-- `POST /expenses/:id` (update route currently uses POST)
-- `DELETE /expenses/:id`
-
-### Profile (Protected)
-
-- `GET /profile`
-- `PUT /profile`
-- `POST /profile/avatar`
-- `GET /profile/avatar`
-- `DELETE /profile/avatar`
-- `GET /profile/export`
-- `DELETE /profile/account`
-
-### Analytics (Protected)
-
-- `GET /analytics/dashboard`
-- `GET /analytics/category`
-- `GET /analytics/monthly`
-- `GET /analytics/trends`
-- `GET /analytics/period`
-- `GET /analytics/current-month`
-- `GET /analytics/yearly-categories`
-- `GET /analytics/all-years`
-
-## Auth Header Format
-
-Protected routes require:
-
-```http
-Authorization: Bearer <jwt_token>
+```bash
+cd server
+npm test
+npm run test:coverage
 ```
 
-## Database Model (Prisma)
+Test files:
 
-### `User`
+- `server/src/__tests__/auth.routes.test.ts`
+- `server/src/__tests__/expense.routes.test.ts`
 
-- `id` (Int, PK, autoincrement)
-- `name` (String)
-- `email` (String, unique)
-- `password` (String, hashed)
-- `createdAt`, `updatedAt`
+Coverage thresholds are configured in `server/jest.config.ts`.
 
-### `Expense`
+### k6 load testing
 
-- `id` (Int, PK, autoincrement)
-- `userId` (FK -> User.id)
-- `amount` (Decimal)
-- `category` (String)
-- `description` (String)
-- `date`
-- `createdAt`, `updatedAt`
+Script: `server/loadtest/expenses.k6.js`
 
-Schema source: `server/prisma/schema.prisma`
+It supports env overrides such as:
 
-## Scripts
+- `BASE_URL`
+- **`K6_EMAIL`******
+- `K6_PASSWORD`
+- `K6_NAME`
 
-### Server
+Example:
 
-- `npm run dev` - run API in dev mode (nodemon)
-- `npm run start` - run API with tsx
-- `npm run build` - compile TypeScript
-- `npm run prisma:generate` - generate Prisma client
-- `npm test` - run tests
-- `npm run test:coverage` - test coverage
+```bash
+k6 run server/loadtest/expenses.k6.js
+```
 
-### Client
+## Deployment Guidance (EC2)
 
-- `npm run dev` - start Vite dev server
-- `npm run build` - production build
-- `npm run preview` - preview production build
+Recommended production shape:
 
-## Deployment Notes (EC2)
+- Host backend on EC2 (Docker Compose or system service)
+- Use managed PostgreSQL (AWS RDS) instead of local container DB
+- Build frontend and serve via Nginx (or S3 + CloudFront)
+- Put Nginx reverse proxy in front of API
+- Enable HTTPS via ACM/ALB or Certbot
+- Restrict SSH and DB security group ingress
 
-- Use Docker Compose on EC2 for backend services.
-- Keep `JWT_SECRET` strong and private.
-- Prefer managed PostgreSQL (AWS RDS) for production.
-- Put Nginx in front of API/frontend and enable HTTPS with Certbot.
+## Known Caveats
 
-## Known Notes
+- Current expense update endpoint is `POST /api/expenses/:id` (not `PUT/PATCH`).
+- Some repo docs/files may still contain legacy references from older revisions.
+- DB naming may vary across files/env values; ensure a single consistent DB name in your deployment config.
 
-- Root app has moved from MongoDB/Mongoose to PostgreSQL/Prisma.
-- Some legacy code paths/docs may still reference Mongo naming.
+# PennyWise Expense Tracker
 
-# 💰 PennyWise — MERN Full Stack Expense Tracker
+Full-stack expense tracking application with a React frontend and an Express API backend.
+The backend uses PostgreSQL with Prisma and JWT-based authentication.
 
-A secure, full-stack personal finance application built with MongoDB, Express, React, and Node.js. PennyWise allows users to track expenses, visualize spending patterns through interactive charts, and manage their financial data — all behind a secure JWT-authenticated API.
+## Project Overview
 
-## Features
-
-- **User Authentication** — Secure sign up and login with JWT tokens
-- **Password Security** — bcrypt hashing for safe password storage
-- **Protected Routes** — Middleware-based route protection on both frontend and backend
-- **Expense Management** — Full CRUD: create, read, update, and delete expenses
-- **Category System** — 8 expense categories: Food & Dining, Transportation, Utilities, Entertainment, Healthcare, Shopping, Education, and Other
-- **Advanced Filtering** — Filter expenses by category, date range, amount range, and search term
-- **Dashboard Overview** — Stats cards, spending pie chart, trend line chart, and recent expenses
-- **Analytics Dashboard** — Deep insights including yearly breakdowns, category comparisons, monthly overviews, and spending insights
-- **Lazy Loading** — Year sections on the analytics page load on scroll via IntersectionObserver
-- **Profile Management** — Update name, email, and password
-- **Avatar Upload** — Upload, preview, and delete profile pictures (JPG/PNG, max 5MB)
-- **Data Export** — Download all expenses and profile data as a JSON file
-- **Account Deletion** — Permanently delete account and all associated data
-
-## Technologies Used
-
-### Frontend
-
-- **React 19** — UI library
-- **TypeScript** — Type safety
-- **Vite** — Build tool and dev server
-- **TanStack Router** — File-based routing with type safety
-- **Zustand** — Lightweight global state management
-- **Axios** — HTTP client
-- **Recharts** — Interactive charts and data visualization
-- **Tailwind CSS v4** — Utility-first styling
-- **Lucide React** — Icon library
-
-### Backend
-
-- **Node.js** — Runtime environment
-- **Express 5** — Web framework
-- **TypeScript** — Type safety
-- **MongoDB** — NoSQL database
-- **Mongoose** — MongoDB object modeling
-- **JWT** — JSON Web Tokens for authentication
-- **bcryptjs** — Password hashing
-- **Multer** — Avatar file upload handling
-- **CORS** — Cross-origin resource sharing
-- **dotenv** — Environment variable management
-- **tsx + nodemon** — TypeScript execution and hot reloading
+- Frontend: React 19 + TypeScript + Vite + TanStack Router + Zustand
+- Backend: Express 5 + TypeScript + Prisma + PostgreSQL + `pg`
+- Auth: JWT (`Authorization: Bearer <token>`)
+- Visualization: Recharts
+- Containerization: Docker + Docker Compose
+- Testing: Jest + Supertest (backend), k6 load test script
 
 ## Screenshots
 
@@ -310,303 +666,271 @@ A secure, full-stack personal finance application built with MongoDB, Express, R
 | Dashboard | ![Dashboard](./PennyWise-Screenshots/4-Dashboard-PennyWise.png) |
 | Expenses  | ![Expenses](./PennyWise-Screenshots/5-Expenses-PennyWise.png)   |
 | Analytics | ![Analytics](./PennyWise-Screenshots/6-Analytics-PennyWise.png) |
-| Profile   | ![Profile](./PennyWise-Screenshots/7-Profile-PennyWise.png)     |
 
-## Prerequisites
+## Repository Structure
 
-Before you begin, ensure you have the following installed:
-
-- **Node.js** (v18 or higher)
-- **MongoDB** (v6 or higher) — [Installation Guide](https://www.youtube.com/watch?v=gB6WLkSrtJk)
-- **npm** or **yarn**
-
-## Project Structure
-
-```
-MERN-Full-Stack-PennyWise-App/
+```text
+Expense_Tracker_App/
 ├── client/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Analytics/
-│   │   │   │   ├── AllYearsChart.tsx
-│   │   │   │   ├── CategoryTable.tsx
-│   │   │   │   ├── CurrentMonthBarChart.tsx
-│   │   │   │   ├── DynamicYearSection.tsx
-│   │   │   │   ├── InsightsCard.tsx
-│   │   │   │   ├── LazyLoadSection.tsx
-│   │   │   │   ├── SummaryCard.tsx
-│   │   │   │   ├── YearCategoryChart.tsx
-│   │   │   │   ├── YearlyCategoryChart.tsx
-│   │   │   │   └── YearlyOverviewChart.tsx
-│   │   │   │   ├── YearSelector.tsx
-│   │   │   ├── Auth/
-│   │   │   │   ├── LoginForm.tsx
-│   │   │   │   └── SignupForm.tsx
-│   │   │   ├── Common/
-│   │   │   │   ├── Avatar.tsx
-│   │   │   │   └── Navigation.tsx
-│   │   │   ├── Dashboard/
-│   │   │   │   ├── CategoryPieChart.tsx
-│   │   │   │   ├── DateRangeSelector.tsx
-│   │   │   │   ├── RecentExpenseItem.tsx
-│   │   │   │   ├── StatsCard.tsx
-│   │   │   │   └── TrendLineChart.tsx
-│   │   │   ├── Expenses/
-│   │   │   │   ├── AmountRangeFilter.tsx
-│   │   │   │   ├── DateRangeFilter.tsx
-│   │   │   │   ├── DeleteConfirmationModal.tsx
-│   │   │   │   ├── ExpenseCard.tsx
-│   │   │   │   ├── ExpenseForm.tsx
-│   │   │   │   ├── ExpenseModal.tsx
-│   │   │   │   ├── ExpensesFilters.tsx
-│   │   │   │   ├── ExpensesList.tsx
-│   │   │   │   ├── FilterChips.tsx
-│   │   │   │   ├── Pagination.tsx
-│   │   │   │   ├── ResultsSummary.tsx
-│   │   │   │   └── SearchBar.tsx
-│   │   │   ├── Home/
-│   │   │   │   ├── CTASection.tsx
-│   │   │   │   ├── FeatureCard.tsx
-│   │   │   │   ├── FeaturesSection.tsx
-│   │   │   │   ├── Footer.tsx
-│   │   │   │   └── HeroSection.tsx
-│   │   │   └── Profile/
-│   │   │       ├── AvatarUpload.tsx
-│   │   │       ├── DeleteAccountModal.tsx
-│   │   │       ├── ExportDataButton.tsx
-│   │   │       ├── ProfileEditForm.tsx
-│   │   │       └── ProfileView.tsx
 │   │   ├── pages/
-│   │   │   ├── AnalyticsPage.tsx
-│   │   │   ├── DashboardPage.tsx
-│   │   │   ├── ExpensesPage.tsx
-│   │   │   ├── HomePage.tsx
-│   │   │   ├── LoginPage.tsx
-│   │   │   ├── ProfilePage.tsx
-│   │   │   └── SignupPage.tsx
 │   │   ├── routes/
-│   │   │   ├── __root.tsx
-│   │   │   ├── analytics.tsx
-│   │   │   ├── dashboard.tsx
-│   │   │   ├── expenses.tsx
-│   │   │   ├── index.tsx
-│   │   │   ├── login.tsx
-│   │   │   ├── profile.tsx
-│   │   │   └── signup.tsx
 │   │   ├── services/
-│   │   │   ├── analyticsService.ts
-│   │   │   ├── api.ts
-│   │   │   ├── authService.ts
-│   │   │   └── expenseService.ts
 │   │   ├── store/
-│   │   │   ├── analyticsStore.ts
-│   │   │   ├── authStore.ts
-│   │   │   └── expenseStore.ts
 │   │   ├── types/
-│   │   │   ├── analytics.types.ts
-│   │   │   ├── auth.types.ts
-│   │   │   ├── expense.types.ts
-│   │   │   └── index.ts
-│   │   ├── utils/
-│   │   │   ├── CategoryConfig.ts
-│   │   │   └── getInitials.ts
 │   │   ├── App.tsx
-│   │   ├── index.css
 │   │   ├── main.tsx
-│   │   ├── routeTree.gen.ts
-│   │   └── vite-env.d.ts
-│   ├── .env
-│   ├── .gitignore
-│   ├── eslint.config.js
-│   ├── index.html
+│   │   └── routeTree.gen.ts
 │   ├── package.json
-│   ├── README.md
-│   ├── tsconfig.app.json
-│   ├── tsconfig.json
-│   ├── tsconfig.node.json
-│   ├── tsr.config.json
 │   └── vite.config.ts
 ├── server/
+│   ├── prisma/
+│   │   └── schema.prisma
 │   ├── src/
+│   │   ├── __tests__/
 │   │   ├── config/
-│   │   │   └── db.ts
 │   │   ├── controllers/
-│   │   │   ├── analyticsControllers.ts
-│   │   │   ├── authControllers.ts
-│   │   │   ├── expenseControllers.ts
-│   │   │   └── profileControllers.ts
 │   │   ├── middleware/
-│   │   │   ├── authMiddleware.ts
-│   │   │   ├── errorHandler.ts
-│   │   │   └── upload.ts
 │   │   ├── models/
-│   │   │   ├── Expense.ts
-│   │   │   └── User.ts
 │   │   ├── routes/
-│   │   │   ├── analyticsRoutes.ts
-│   │   │   ├── authRoutes.ts
-│   │   │   ├── expenseRoutes.ts
-│   │   │   └── profileRoutes.ts
 │   │   ├── types/
-│   │   │   └── index.ts
 │   │   ├── utils/
-│   │   │   ├── responseHelpers.ts
-│   │   │   └── tokenHelpers.ts
-│   │   ├── index.ts
-│   │   └── mongoDBTestConnection.ts
-│   ├── uploads/
-│   │   └── avatars/
-│   ├── .env
-│   ├── .gitignore
-│   ├── nodemon.json
-│   ├── package.json
-│   ├── README.md
-│   └── tsconfig.json
-├── PennyWise-Screenshots/
-│   ├── 1-Signup-PennyWise.png
-│   ├── 2-Login-PennyWise.png
-│   ├── 3-Home-PennyWise.png
-│   ├── 4-Dashboard-PennyWise.png
-│   ├── 5-Expenses-PennyWise.png
-│   ├── 6-Analytics-PennyWise.png
-│   └── 7-Profile-PennyWise.png
+│   │   └── index.ts
+│   ├── loadtest/
+│   │   └── expenses.k6.js
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   └── package.json
+├── PROJECT_FLOWCHART.md
 └── README.md
 ```
 
-## Getting Started
+## Tech Stack
 
-### 1. Download/Clone the Repository
+### Frontend (`client`)
 
-### 2. Set Up the Server
+- `react`, `react-dom`
+- `@tanstack/react-router`
+- `zustand`
+- `axios`
+- `recharts`
+- `lucide-react`
+- `vite`
+- `typescript`
+- `tailwindcss` + `@tailwindcss/vite`
 
-```bash
-cd server
-npm install
+### Backend (`server`)
+
+- `express`
+- `typescript`
+- `@prisma/client` + `prisma`
+- `pg`
+- `jsonwebtoken`
+- `bcryptjs`
+- `cors`
+- `dotenv`
+- `nodemon` + `tsx`
+- `jest`, `ts-jest`, `supertest`
+
+## Current Features (Code-Verified)
+
+- User signup and login
+- JWT-protected API routes
+- Expense management (create, read, update, delete)
+- Dashboard and analytics endpoints
+- Profile retrieval and profile update
+- User data export
+- Account deletion
+- Request timing middleware (`X-Response-Time` header)
+
+## Frontend Details
+
+- TanStack Router file-based routes are generated in `client/src/routeTree.gen.ts`.
+- Protected pages (`/dashboard`, `/expenses`, `/analytics`, `/profile`) enforce auth in route guards.
+- Axios client in `client/src/services/api.ts`:
+  - adds JWT token from local storage to requests
+  - clears auth and redirects to `/login` on `401`
+- Vite dev server runs on **port `3000`** (configured in `client/vite.config.ts`).
+
+## Backend Details
+
+- App entrypoint: `server/src/index.ts`
+- API base: `http://localhost:8000/api`
+- Middleware chain includes:
+  - CORS
+  - JSON body parser
+  - request timing middleware
+  - route mounting
+  - 404 handler
+  - global error handler
+
+### Route Map (Exact Methods)
+
+#### Public
+
+- `GET /`
+- `GET /health`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+
+#### Protected (`requireAuth`)
+
+##### Expenses (`/api/expenses`)
+
+- `GET /`
+- `GET /:id`
+- `POST /`
+- `POST /:id` (update)
+- `DELETE /:id`
+
+##### Profile (`/api/profile`)
+
+- `GET /`
+- `PUT /`
+- `GET /export`
+- `DELETE /account`
+
+##### Analytics (`/api/analytics`)
+
+- `GET /category`
+- `GET /monthly`
+- `GET /dashboard`
+- `GET /trends`
+- `GET /period`
+- `GET /current-month`
+- `GET /yearly-categories`
+- `GET /all-years`
+
+## Authentication
+
+- Login returns a JWT.
+- Send token in headers for protected routes:
+
+```http
+Authorization: Bearer <jwt_token>
 ```
 
-Create a `.env` file in the `server/` directory:
+## Database
+
+- Database provider: PostgreSQL
+- Prisma schema: `server/prisma/schema.prisma`
+- Models:
+  - `User`
+  - `Expense`
+- In addition to Prisma model methods, analytics controllers execute raw SQL through `pg` for aggregations.
+- Startup DB initialization in `server/src/config/db.ts` creates required tables/indexes if missing.
+
+## Environment Variables
+
+### Backend (`server/.env`)
+
+Required by code:
 
 ```env
 PORT=8000
-MONGODBURI=mongodb://localhost:27017/pennywise
-JWT_SECRET=your-secure-jwt-secret-key
 NODE_ENV=development
+JWT_SECRET=replace-with-strong-secret
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/expense-tracker
 ```
 
-Start MongoDB, then run the server:
+`server/src/config/db.ts` also supports split PG vars if `DATABASE_URL` is not set:
 
-```bash
-npm run dev
+```env
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=expense-tracker
+PGUSER=postgres
+PGPASSWORD=postgres
 ```
 
-The API will be available at `http://localhost:8000`
-
-### 3. Set Up the Client
-
-Open a new terminal:
-
-```bash
-cd client
-npm install
-```
-
-Create a `.env` file in the `client/` directory:
+### Frontend (`client/.env`)
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api
 ```
 
-Start the frontend:
+If omitted, client falls back to `http://localhost:8000/api`.
+
+## Local Development
+
+### 1) Start backend
 
 ```bash
+cd server
+npm install
+npm run prisma:generate
 npm run dev
 ```
 
-The app will be available at `http://localhost:3000`
+Backend runs at `http://localhost:8000`.
 
-## API Endpoints
+### 2) Start frontend
 
-### Public Routes
-
-| Method | Endpoint           | Description                   |
-| ------ | ------------------ | ----------------------------- |
-| POST   | `/api/auth/signup` | Register a new user           |
-| POST   | `/api/auth/login`  | Login and receive a JWT token |
-
-### Expense Routes (Protected)
-
-| Method | Endpoint            | Description                                           |
-| ------ | ------------------- | ----------------------------------------------------- |
-| GET    | `/api/expenses`     | Get all expenses (supports `?category=` and `?sort=`) |
-| GET    | `/api/expenses/:id` | Get a single expense                                  |
-| POST   | `/api/expenses`     | Create a new expense                                  |
-| PUT    | `/api/expenses/:id` | Update an expense                                     |
-| DELETE | `/api/expenses/:id` | Delete an expense                                     |
-
-### Profile Routes (Protected)
-
-| Method | Endpoint               | Description                             |
-| ------ | ---------------------- | --------------------------------------- |
-| GET    | `/api/profile`         | Get current user profile                |
-| PUT    | `/api/profile`         | Update name, email, or password         |
-| POST   | `/api/profile/avatar`  | Upload a profile picture                |
-| GET    | `/api/profile/avatar`  | Get profile picture                     |
-| DELETE | `/api/profile/avatar`  | Delete profile picture                  |
-| DELETE | `/api/profile/account` | Permanently delete account and all data |
-| GET    | `/api/profile/export`  | Export all data as JSON                 |
-
-### Analytics Routes (Protected)
-
-| Method | Endpoint                                 | Description                                    |
-| ------ | ---------------------------------------- | ---------------------------------------------- |
-| GET    | `/api/analytics/dashboard`               | Total, count, average, this month stats        |
-| GET    | `/api/analytics/category`                | Spending totals grouped by category            |
-| GET    | `/api/analytics/trends`                  | Monthly spending over the last 6 months        |
-| GET    | `/api/analytics/period?days=`            | Category breakdown for a custom time period    |
-| GET    | `/api/analytics/current-month`           | Category breakdown for the current month       |
-| GET    | `/api/analytics/monthly?year=`           | Monthly totals for a specific year             |
-| GET    | `/api/analytics/yearly-categories?year=` | Monthly category breakdown for a specific year |
-| GET    | `/api/analytics/all-years`               | Total spending grouped by year                 |
-
-## Authorization
-
-All protected routes require a valid JWT token. Pass it in the request header:
-
-```
-Authorization: Bearer <your_token>
+```bash
+cd client
+npm install
+npm run dev
 ```
 
-You receive the token in the response body upon successful login.
+Frontend runs at `http://localhost:3000`.
 
-## Database Schema
+## Docker Compose (Server Side)
 
-### Users Collection
+From `server/`:
 
-```
-{
-  _id: ObjectId,
-  name: String,
-  email: String (unique),
-  password: String (bcrypt hashed),
-  avatar: String (optional, filename),
-  createdAt: Date,
-  updatedAt: Date
-}
+```bash
+docker compose up -d --build
 ```
 
-### Expenses Collection
+Exposed services from `server/docker-compose.yml`:
 
-```
-{
-  _id: ObjectId,
-  userId: ObjectId (ref: User),
-  amount: Number,
-  category: String (food | transport | utilities | entertainment | healthcare | shopping | education | other),
-  description: String,
-  date: Date,
-  createdAt: Date,
-  updatedAt: Date
-}
+- API: `8000`
+- PostgreSQL: `5432`
+- pgAdmin: `8080`
+- InfluxDB: `8086`
+- Grafana: `3001`
+
+Stop services:
+
+```bash
+docker compose down
 ```
 
+Remove volumes as well:
+
+```bash
+docker compose down -v
+```
+
+## Scripts
+
+### Client
+
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+- `npm run preview`
+
+### Server
+
+- `npm run dev`
+- `npm run build`
+- `npm run start`
+- `npm run prisma:generate`
+- `npm test`
+- `npm run test:coverage`
+
+## Testing and Performance
+
+- Backend tests: `server/src/__tests__/`
+- Test runner: Jest with ts-jest ESM config (`server/jest.config.ts`)
+- Coverage thresholds configured in Jest (global lines/statements/functions/branches)
+- Load test script: `server/loadtest/expenses.k6.js`
+
+## Important Notes
+
+- This project is currently PostgreSQL/Prisma-based (not MongoDB/Mongoose).
+- Some legacy docs/files in the repo may still reference older behavior.
+- Route behavior in this README reflects the current code exactly (including `POST /api/expenses/:id` for updates).
 

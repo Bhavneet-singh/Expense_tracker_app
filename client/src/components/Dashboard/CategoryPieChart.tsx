@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Cell,
   Pie,
+  PieSectorDataItem,
   ResponsiveContainer,
   PieChart,
   Tooltip,
@@ -15,6 +16,10 @@ import {
 interface CategoryPieChartProps {
   data: CategoryTotal[];
   selectedPeriod: string;
+}
+
+interface PieChartDataItem extends CategoryTotal {
+  percent?: number;
 }
 
 interface CustomToolTipProps {
@@ -119,7 +124,10 @@ export default function CategoryPieChart({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  function handleSliceClick(entry: CategoryTotal) {
+  function handleSliceClick(data: PieSectorDataItem) {
+    const entry = data.payload as PieChartDataItem | undefined;
+    if (!entry) return;
+
     setCategory(entry.category);
 
     if (selectedPeriod !== "all") {
@@ -141,7 +149,7 @@ export default function CategoryPieChart({
     navigate({ to: "/expenses" });
   }
 
-  const chartData = data.map((item) => ({
+  const chartData: PieChartDataItem[] = data.map((item) => ({
     category: item.category,
     total: item.total,
     count: item.count,

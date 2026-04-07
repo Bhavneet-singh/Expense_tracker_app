@@ -102,7 +102,7 @@ export default function YearlyCategoryChart({
     setDateRange(startDate, endDate);
     navigate({ to: "/expenses" });
   }
-  const allCategories = Object.values(ExpenseCategory);
+  const allCategories = Object.values(ExpenseCategory) as string[];
 
   const chartData = data.map((monthData) => {
     const [monthStr, yearStr] = String(monthData.month).split("-");

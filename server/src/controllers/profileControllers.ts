@@ -1,14 +1,14 @@
 import { Request, Response, NextFunction } from "express";
-import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
-import { AppError } from "../middleware/errorHandler";
+import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
+import { AppError } from "../middleware/errorHandler.js";
 import {
   deleteUserById,
   findUserByEmailExcludingId,
   findUserById,
   updateUser,
-} from "../models/User";
+} from "../models/User.js";
 import bcrypt from "bcryptjs";
-import { deleteExpensesByUserId, listExpensesByUserId } from "../models/Expense";
+import { deleteExpensesByUserId, listExpensesByUserId } from "../models/Expense.js";
 
 export const getProfile = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {

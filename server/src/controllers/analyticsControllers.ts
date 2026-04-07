@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from "express";
-import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
-import { AppError } from "../middleware/errorHandler";
-import { DashboardStats, Expense, MonthlyTotals } from "../types";
-import { findUserById } from "../models/User";
-import { query } from "../config/db";
+import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
+import { AppError } from "../middleware/errorHandler.js";
+import { DashboardStats, Expense, MonthlyTotals } from "../types/index.js";
+import { findUserById } from "../models/User.js";
+import { query } from "../config/db.js";
 
 const getMonthString = (date: Date): string => {
   const year = date.getFullYear();

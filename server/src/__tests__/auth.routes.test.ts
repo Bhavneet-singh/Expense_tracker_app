@@ -12,7 +12,7 @@ const mockFindUserByEmailExcludingId = jest.fn();
 const mockFindUserById = jest.fn();
 const mockUpdateUser = jest.fn();
 
-jest.unstable_mockModule("../utils/logger", () => ({
+jest.unstable_mockModule("../utils/logger.js", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -21,7 +21,7 @@ jest.unstable_mockModule("../utils/logger", () => ({
   },
 }));
 
-jest.unstable_mockModule("../models/User", () => ({
+jest.unstable_mockModule("../models/User.js", () => ({
   createUser: mockCreateUser,
   deleteUserById: mockDeleteUserById,
   findUserByEmail: mockFindUserByEmail,
@@ -30,15 +30,15 @@ jest.unstable_mockModule("../models/User", () => ({
   updateUser: mockUpdateUser,
 }));
 
-jest.unstable_mockModule("../routes/profileRoutes", () => ({
+jest.unstable_mockModule("../routes/profileRoutes.js", () => ({
   default: express.Router(),
 }));
 
-jest.unstable_mockModule("../routes/analyticsRoutes", () => ({
+jest.unstable_mockModule("../routes/analyticsRoutes.js", () => ({
   default: express.Router(),
 }));
 
-const { createApp } = await import("../app");
+const { createApp } = await import("../app.js");
 
 describe("Auth routes", () => {
   const app = createApp();

@@ -12,7 +12,7 @@ const mockFindExpenseById = jest.fn();
 const mockListExpensesByUserId = jest.fn();
 const mockUpdateExpenseById = jest.fn();
 
-jest.unstable_mockModule("../utils/logger", () => ({
+jest.unstable_mockModule("../utils/logger.js", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -21,7 +21,7 @@ jest.unstable_mockModule("../utils/logger", () => ({
   },
 }));
 
-jest.unstable_mockModule("../models/Expense", () => ({
+jest.unstable_mockModule("../models/Expense.js", () => ({
   createExpense: mockCreateExpense,
   deleteExpenseById: mockDeleteExpenseById,
   deleteExpensesByUserId: jest.fn(),
@@ -31,15 +31,15 @@ jest.unstable_mockModule("../models/Expense", () => ({
   updateExpenseById: mockUpdateExpenseById,
 }));
 
-jest.unstable_mockModule("../routes/profileRoutes", () => ({
+jest.unstable_mockModule("../routes/profileRoutes.js", () => ({
   default: express.Router(),
 }));
 
-jest.unstable_mockModule("../routes/analyticsRoutes", () => ({
+jest.unstable_mockModule("../routes/analyticsRoutes.js", () => ({
   default: express.Router(),
 }));
 
-const { createApp } = await import("../app");
+const { createApp } = await import("../app.js");
 
 const authHeader = {
   Authorization: `Bearer ${jwt.sign({ userId: "1" }, process.env.JWT_SECRET!)}`,

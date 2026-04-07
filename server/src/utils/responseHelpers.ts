@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { ApiResponse, PaginationMeta } from "../types";
+import { ApiResponse, PaginationMeta } from "../types/index.js";
 
 export const sendSuccess = <T>(
   res: Response,

@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
-import { AppError } from "./errorHandler";
+import { AppError } from "./errorHandler.js";
 import jwt from "jsonwebtoken";
-import { logger } from "../utils/logger";
+import { logger } from "../utils/logger.js";
 
 declare global {
   namespace Express {

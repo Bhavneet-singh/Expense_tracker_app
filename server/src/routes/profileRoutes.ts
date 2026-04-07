@@ -4,8 +4,8 @@ import {
   exportData,
   getProfile,
   updateProfile,
-} from "../controllers/profileControllers";
-import { requireAuth } from "../middleware/authMiddleware";
+} from "../controllers/profileControllers.js";
+import { requireAuth } from "../middleware/authMiddleware.js";
 
 const router = Router();
 

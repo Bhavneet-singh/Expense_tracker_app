@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "../config/db";
-import { Expense } from "../types";
+import { prisma } from "../config/db.js";
+import { Expense } from "../types/index.js";
 
 const expenseSelect = {
   id: true,

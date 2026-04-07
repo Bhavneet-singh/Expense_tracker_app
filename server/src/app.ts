@@ -1,12 +1,12 @@
 import express, { Application } from "express";
 import cors from "cors";
-import expenseRoutes from "./routes/expenseRoutes";
-import authRoutes from "./routes/authRoutes";
-import profileRoutes from "./routes/profileRoutes";
-import analyticsRoutes from "./routes/analyticsRoutes";
-import { errorHandler } from "./middleware/errorHandler";
-import { logger } from "./utils/logger";
-import { requestTiming } from "./middleware/requestTiming";
+import expenseRoutes from "./routes/expenseRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { logger } from "./utils/logger.js";
+import { requestTiming } from "./middleware/requestTiming.js";
 
 export const createApp = (): Application => {
   const app = express();

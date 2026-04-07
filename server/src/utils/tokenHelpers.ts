@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 
 export const generateToken = (userId: string): string => {
   const secret = process.env.JWT_SECRET;

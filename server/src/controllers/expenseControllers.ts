@@ -1,14 +1,14 @@
 import { NextFunction, Request, Response } from "express";
-import { ExpenseCategory } from "../types";
-import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
-import { AppError } from "../middleware/errorHandler";
+import { ExpenseCategory } from "../types/index.js";
+import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
+import { AppError } from "../middleware/errorHandler.js";
 import {
   createExpense as insertExpense,
   deleteExpenseById,
   findExpenseByIdForUser,
   listExpensesByUserId,
   updateExpenseById,
-} from "../models/Expense";
+} from "../models/Expense.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;

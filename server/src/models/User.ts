@@ -1,5 +1,5 @@
-import { prisma } from "../config/db";
-import { User } from "../types";
+import { prisma } from "../config/db.js";
+import { User } from "../types/index.js";
 
 const userSelect = {
   id: true,

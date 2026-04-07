@@ -1,10 +1,10 @@
 import { NextFunction, Request, Response } from "express";
-import { AuthResponse } from "../types";
-import { asyncHandler, sendSuccess } from "../utils/responseHelpers";
-import { AppError } from "../middleware/errorHandler";
-import { createUser, findUserByEmail } from "../models/User";
+import { AuthResponse } from "../types/index.js";
+import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
+import { AppError } from "../middleware/errorHandler.js";
+import { createUser, findUserByEmail } from "../models/User.js";
 import bcrypt from "bcryptjs";
-import { generateToken } from "../utils/tokenHelpers";
+import { generateToken } from "../utils/tokenHelpers.js";
 
 export const signup = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {

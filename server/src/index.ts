@@ -5,15 +5,15 @@ import { createApp } from "./app.js";
 
 dotenv.config();
 
-const PORT = process.env.PORT || 8000;
+const PORT = Number(process.env.PORT) || 8000;
 const app = createApp();
 
 const startServer = async () => {
   await connectDB();
 
-  app.listen(PORT, () => {
+  app.listen(PORT, "0.0.0.0", () => {
     logger.info("Server is running", {
-      url: `http://localhost:${PORT}`,
+      url: `http://0.0.0.0:${PORT}`,
       portSource: process.env.PORT ? ".env file" : "default (8000)",
       environment: process.env.NODE_ENV || "development",
     });

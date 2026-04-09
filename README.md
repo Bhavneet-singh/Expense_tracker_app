@@ -615,7 +615,7 @@ Script: `server/loadtest/expenses.k6.js`
 It supports env overrides such as:
 
 - `BASE_URL`
-- **`K6_EMAIL`******
+- **`K6_EMAIL`**
 - `K6_PASSWORD`
 - `K6_NAME`
 

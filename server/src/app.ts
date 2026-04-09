@@ -12,11 +12,15 @@ export const createApp = (): Application => {
   const app = express();
 
   const corsOptions = {
-    origin: ["*", "http://localhost:3000"],
+    origin: [
+      "http://localhost:3000",
+      "https://expense-tracker-app-3nlr.vercel.app"
+    ],
     credentials: true,
   };
-
+  
   app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
   app.use(express.json());
   app.use(requestTiming);
 

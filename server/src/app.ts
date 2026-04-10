@@ -11,15 +11,14 @@ import { requestTiming } from "./middleware/requestTiming.js";
 export const createApp = (): Application => {
   const app = express();
 
-  const corsOptions = {
-    origin: [
-      "http://localhost:3000",
-      "https://expense-tracker-app-tan-two.vercel.app/",
-    ],
-    credentials: true,
-  };
+  app.use(
+    cors({
+      origin: true,
+      credentials: true,
+    }),
+  );
 
-  app.use(cors(corsOptions));
+  app.options("*", cors());
   app.use(express.json());
   app.use(requestTiming);
 

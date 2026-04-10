@@ -14,11 +14,11 @@ export const createApp = (): Application => {
   const corsOptions = {
     origin: [
       "http://localhost:3000",
-      "https://expense-tracker-app-3nlr.vercel.app"
+      "https://expense-tracker-app-tan-two.vercel.app/",
     ],
     credentials: true,
   };
-  
+
   app.use(cors(corsOptions));
   app.use(express.json());
   app.use(requestTiming);

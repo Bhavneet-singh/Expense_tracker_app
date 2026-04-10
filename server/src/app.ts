@@ -17,8 +17,6 @@ export const createApp = (): Application => {
       credentials: true,
     }),
   );
-
-  app.options("*", cors());
   app.use(express.json());
   app.use(requestTiming);
 

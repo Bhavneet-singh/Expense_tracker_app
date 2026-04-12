@@ -12,7 +12,10 @@ export const createApp = (): Application => {
   const app = express();
 
   const corsOptions = {
-    origin: ["http://localhost:3000", "https://pennywise-frontend.vercel.app"],
+    origin: [
+      "http://localhost:3000",
+      "https://expense-tracker-app-nine-livid.vercel.app/",
+    ],
     credentials: true,
   };
   app.use(cors(corsOptions));

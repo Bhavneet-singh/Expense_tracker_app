@@ -11,7 +11,11 @@ import { requestTiming } from "./middleware/requestTiming.js";
 export const createApp = (): Application => {
   const app = express();
 
-  app.use(cors());
+  const corsOptions = {
+    origin: ["http://localhost:3000", "https://pennywise-frontend.vercel.app"],
+    credentials: true,
+  };
+  app.use(cors(corsOptions));
   app.use(express.json());
   app.use(requestTiming);
 
